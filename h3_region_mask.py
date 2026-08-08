@@ -154,8 +154,8 @@ def make_override(previous):
         if n != factor.shape[0]:
             return dense(q, k, v)
 
-        # sigma gate
-        sigmas = to.get("sample_sigmas")
+        # sigma gate (per-step sigmas, same key SolAttn reads)
+        sigmas = to.get("sigmas")
         if sigmas is not None and len(sigmas):
             s = float(sigmas[0])
             ss = float(c.get("sigma_start", 1.0))
