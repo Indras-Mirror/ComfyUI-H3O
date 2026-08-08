@@ -5,66 +5,150 @@ companion nodes.
 
 ## Nodes
 
-### H3PromptEnhancer
-Vision-LLM prompt enhancement for MiniMax H3. Reformats a raw user request into
-the structured prompt format H3 expects:
+- [**H3PromptEnhancer**](#h3promptenhancer) — vision-LLM prompt enhancement
+  into MiniMax H3's structured prompt format
+- [**H3AspectRatioDetector**](#h3aspectratiodetector) — auto-match the
+  Resolution Selector canvas to a source image's aspect ratio
 
-- **Base format (T2V / I2V / FL2V / L2V):** 3 fields —
-  `integrated_multimodal_description`, `overall_soundscape`, `non_diegetic_music`
-- **Full-reference format (R2V):** 6 fields — `subject_definitions`, `summary`,
-  `retention_analysis`, `detailed_description`, `overall_soundscape`,
-  `non_diegetic_music`
+---
 
-Backends:
-- **OpenRouter** (Grok, DeepSeek, Gemini, etc.) — API key from the node input
-  or the `OPENROUTER_API_KEY` environment variable
-- **Local Ollama (JoyCaption)** — `local_backend = "ollama/joycaption"`
+## H3PromptEnhancer
 
-Outputs `h3_prompt` (structured text) and `system_prompt` (for inspection).
-Wires straight into the H3 workflow's prompt slot.
+The community "H3-Context-IR" replacement. It reformats a raw user request into
+the exact structured prompt format MiniMax H3 expects, using a vision-capable
+LLM that actually **sees** your reference images and source video frames.
 
-### H3AspectRatioDetector
-Feed a `LoadImage`/`Image Resize` output and it emits the exact
-`aspect_ratio` option string the core **Resolution Selector** node expects,
-matched to the image's own dimensions (orientation-aware). Plug the
-`aspect_ratio` output into the Resolution Selector socket and width/height
-follow automatically.
+### Output format
 
-### H3RegionAttentionMask
-Real spatial/temporal regional control for MiniMax H3 DiT self-attention —
-the *correct* version of the popular `ComfyUI-MiniMaxH3-AttentionMask` node.
+The output schema switches on the **task_type** widget:
 
-**Important**: that node uses `set_model_attn1_patch`, which is a silent no-op
-on MiniMax H3 (H3's `Attention` class never dispatches `attn1_patch` — it calls
-`optimized_attention` directly). This node hooks H3 correctly via
-`optimized_attention_override` (the same hook `SolAttnPatch` uses) and
-geometrically aligns the mask to H3's packed video token layout.
+| task_type | Meaning | Output fields |
+|-----------|---------|---------------|
+| `t2v` | text-to-video, no images | 3 fields |
+| `i2v` | image-to-video (first-frame anchor) | 3 fields |
+| `fl2v` | first + last frame anchors | 3 fields |
+| `l2v` | last-frame only (converge to image) | 3 fields |
+| `r2v` | full-reference mode (subject/picture/video/audio labels) | 6 fields |
 
-Feed it any `MASK` (SAM2 / SAM3 / RMBG / LoadImage Mask output):
+**3-field (base)** format:
 
-- **preserve_foreground** — damp background QUERY tokens: background attends
-  weakly, freeing it to change (background replacement drifts, foreground
-  stays clean and locked).
-- **suppress_background** — damp background KV columns: no query can read the
-  background (hold a character while suppressing the background).
+1. `integrated_multimodal_description` — `[Shot 1]` style + shot type + scene
+   description with camera moves, subject actions, dialogue, and diegetic audio
+   woven chronologically along the timeline. Cuts are marked `[Shot N] At
+   MM:SS.mmm`. Dialogue uses `<d>[Language] text</d>`.
+2. `overall_soundscape` — 1-4 sentences of ambient sound, physical action
+   sounds, and diegetic audio.
+3. `non_diegetic_music` — background music: genre, tempo, instrumentation,
+   mood, where it starts/ends.
 
-Composes with SolAttnPatch / Spectrum / FirstBlockCache via the standard
-`optimized_attention_override` chain. `strength` fades 0..1; `sigma_start` /
-`sigma_end` gate by sampling sigma (1.0/0.0 = always on; try 0.8/0.2 for a
-warm-up dense schedule).
+**6-field (R2V reference)** format:
 
-## Workflow
+1. `subject_definitions` — one line per label: `<Subject N>` (reusable visible
+   content), `<Picture N>` (frame anchor / storyboard), `<Video N>` (whole-video
+   structural source: editing, continuation, camera, cuts, rhythm), `<Audio N>`
+   (voice timbre, BGM, SFX).
+2. `summary` — one paragraph tying the target video to the references.
+3. `retention_analysis` — what is preserved / transferred / referenced from
+   each reference item.
+4. `detailed_description` — the main body, 350-500 words, reference labels at
+   first appearance.
+5. `overall_soundscape` — as above.
+6. `non_diegetic_music` — as above.
 
-`video_minimax_h3_r2v_H3Prompt_VSR_Mask.json` — a copy of the R2V VSR workflow
-with the node wired into the model chain:
+### How it works (two passes)
+
+**Pass 1 — auto-describe (identity anchoring).** When `auto_describe` is on and
+any image is attached, the node first calls the LLM in *analysis* mode with a
+strict JSON schema. Every attached image (source frames, references, first/last
+frames) is labeled (`image0`, `image1`, …) and described as:
+
+- `subject` — identity, face shape, eyes, hair, body type, full clothing
+  inventory, accessories, distinguishing features (tattoos, scars, piercings)
+- `scene` — location, background, props, composition, lighting, camera angle
+- `current_state` — pose, expression, action, gaze direction
+
+That analysis is injected into the write pass inside a
+`--- Context Analysis ---` block, so the final prompt anchors on **explicit
+identity features** instead of the writing LLM re-guessing from a fresh look.
+This is the main lever for strong R2V subject consistency and I2V replacement
+characters. Costs one extra API call per run; budget it with
+`auto_describe_max_tokens` (4096+ for multi-image scenes, 2048 for a single
+simple image).
+
+**Pass 2 — the write.** The node assembles the final user message:
+
+- **Vision content**: source image (`<Picture 1>` anchor for I2V/FL2V/L2V),
+  last-frame image (`<Picture 2>` for FL2V), source video sampled to ≤6 frames
+  across its timeline (shown as `<Video 1>` — reserved by the official guide
+  for whole-video relationships: editing, continuation, camera/cut structure),
+  and up to 3 reference images (R2V subjects/pictures, or I2V replacement
+  `<Subject N>` definitions).
+- **Task framing**: the H3 task label plus task-specific rules injected per
+  type — e.g. i2v *must* open with the "at 0.00 seconds, &lt;Picture 1&gt; is
+  fully referenced" line; r2v sets the 350-500 word detailed_description rule.
+- **Directives**: optional `same_subject` (all references are one person →
+  merge identity across images) and `style_transfer` (render the reference
+  subject in `anime` / `3d_render` / `cartoon` / `match_source` style while
+  keeping identity-defining features).
+- **Your raw prompt** rides at the end as the user notes.
+
+That whole message (images + text) goes to the LLM with the selected system
+prompt, and the structured result is returned on the `h3_prompt` output — wire
+it straight into the H3 node's prompt input. `system_prompt` is the second
+output, for inspection/debugging.
+
+### Model / backend
+
+- **OpenRouter (default)** — `model` dropdown (Grok, DeepSeek, Gemini, GPT-4o)
+  or a free-form `custom_model` ID. API key from the `api_key` input or the
+  `OPENROUTER_API_KEY` environment variable. **Never stored in the repo.**
+- **Local Ollama (JoyCaption Beta One, 7.5GB)** — `local_backend =
+  "ollama/joycaption"`. Requires Ollama running (`systemctl start ollama`).
+  The node auto-appends NSFW permission + JoyCaption prose-style prompts for
+  local models, and unloads the model from VRAM after the call.
+
+### Other controls
+
+| Widget | Default | What it does |
+|--------|---------|--------------|
+| `temperature` | 0.7 | Lower = predictable format, higher = creative detail |
+| `max_tokens` | 4096 | R2V prompts are long (6 fields) — keep ≥4096 |
+| `advanced_prompt` | on | Community H3-Context-IR refinements: camera-motion vocabulary, stable speaker IDs, voiceover phrasing, audio-binding rules |
+| `custom_system_prompt` | "" | Full override of the built-in system prompt |
+| `duration` | 5.0s | Drives shot pacing / cut timing in the template |
+
+### Quick example
 
 ```
-UNETLoader → PathchSageAttentionKJ → SolAttnPatch → FirstBlockCache → RefBoost
-            → H3RegionAttentionMask → SpectrumApplyMiniMaxH3 → sampler
+User prompt: "a man jumps off a cliff into a lake, slow motion"
+task_type: t2v, duration: 5.0
+
+→ h3_prompt:
+integrated_multimodal_description:
+[Shot 1] Cinematic, live-action, wide shot of a cliff top at golden hour...
+camera: slow push-in, 0.2x amplitude...
+[Shot 2] At 00:03.500, the camera cuts to a low angle...
+  ...
+overall_soundscape: ...
+non_diegetic_music: ...
 ```
 
-The `Region Mask` LoadImage placeholder expects `region_mask.png` in your
-ComfyUI `input/` folder; wire any real mask source (SAM2/SAM3) in its place.
+---
+
+## H3AspectRatioDetector
+
+Feed any `IMAGE` (a `LoadImage` or image-resize output) and it emits the exact
+`aspect_ratio` option string the core **Resolution Selector** node expects —
+picked to match the image's own dimensions, orientation-aware (a 3:4 portrait
+selects "3:4 (Portrait Standard)", a 16:9 landscape selects "16:9
+(Widescreen)"). Plug the `aspect_ratio` output into the Resolution Selector
+socket and the canvas width/height follow automatically — no manual selection.
+
+Outputs: `aspect_ratio` (COMBO string), `width`, `height`, `ratio` (float w/h).
+The optional `aspect_ratio` string input is a manual override, e.g.
+`"21:9 (Ultrawide)"`.
+
+---
 
 ## Installation
 
