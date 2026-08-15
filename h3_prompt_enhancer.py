@@ -666,6 +666,42 @@ Maintain recognizable identity while fully adapting to the source video's visual
 language.""",
 }
 
+# ── Character-replacement editing frame (community Ref2VA replacement register) ─
+# Folded in from the ComfyUI-MiniMaxRefPack replacement system prompt
+# (2026-08-16). Applies to ANY job with a plate video (<Video 1> from a source
+# video or H3ImageToRefVideo) + identity reference images: rv2v AND ri2v.
+# Frames the job as [video editing] — the target is an edited version of the
+# plate with ONE thing swapped and everything else preserved — and demands the
+# replacement inherit the plate's motion/integration/optics/lighting so the
+# identity lands composited INTO the scene instead of floating over it.
+H3_REF_EDITING_FRAME = """\
+CHARACTER-REPLACEMENT EDITING FRAME (REQUIRED): the source video <Video 1> is
+the PLATE — its scene, framing, lighting, camera position, body positions,
+motion, timing and structure are preserved as-is. The target video is an
+EDITED VERSION of <Video 1>: the woman in the plate is swapped for the subject
+from the reference images, and NOTHING ELSE about the plate changes.
+- In summary open with: [video editing] The target video is an edited version
+  of <Video 1>.
+- In retention_analysis mark the plate <Video 1> as partially_preserved (its
+  scene, structure, motion, timing and male performer are retained; only the
+  swapped character changes). The replacement <Subject N> is attribute_transfer.
+- MOTION INHERITANCE: the replacement takes the plate woman's screen position,
+  scale, rotation, path, speed and timing FRAME FOR FRAME — no new movement,
+  none removed. The body motion she had in the plate is exactly what the
+  replacement does.
+- INTEGRATION: the man's hands still grip where the plate has them; occluded
+  body parts stay occluded; the replacement lies on the same surface at the
+  same angle; contact follows the plate's geometry.
+- OPTICS + LIGHTING: carry the plate's depth of field, focus falloff and
+  motion blur; the same key direction, intensity, falloff and white balance;
+  the same shadow length, direction and softness.
+- STYLE: photoreal, matching the plate's tone, contrast and grade. identity
+  from the reference pictures holds steady with no drift in shape, colour or
+  markings across the clip.
+- Do NOT write a new scene. Anything the direction adds (orgasm, creampie,
+  dialogue, camera hold) happens within the plate's fixed shot and framing;
+  the camera stays where the plate has it."""
+
 # ── Two-pass auto-describe (Bernini-style identity anchoring) ─────────────
 # First pass: a vision LLM describes each attached image as structured JSON.
 # Those descriptions are injected into the final H3 write pass so the prompt
@@ -1437,6 +1473,12 @@ class H3PromptEnhancer:
         elif (task_type in H3_RV2V_TASK_TYPES and has_refs
               and source_video is not None and not same_subject):
             extra_rules.append(H3_RV2V_SAME_SUBJECT_RULE)
+        # Character-replacement editing frame: applies to ANY job with a plate
+        # video (<Video 1> from source video or H3ImageToRefVideo) + identity
+        # reference images — rv2v AND ri2v. Frames the target as an edited
+        # version of the plate with only the character swapped.
+        if source_video is not None and has_refs:
+            extra_rules.append(H3_REF_EDITING_FRAME)
         if style_transfer and style_transfer != "off":
             rule = H3_STYLE_TRANSFER_RULES.get(style_transfer)
             if rule:

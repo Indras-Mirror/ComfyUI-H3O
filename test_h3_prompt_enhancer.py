@@ -418,4 +418,36 @@ check("bound: 5-image case lists exactly 5 pictures",
       and "<Picture 1>, <Picture 2>, <Picture 3>, <Picture 4>, <Picture 5>" in t9b
       and "beyond <Picture 5> does not exist" in t9b)
 
+# ── 10. character-replacement editing frame (folded from RefPack register) ─
+# Applies to ANY job with a plate video + identity refs — rv2v AND ri2v.
+print("\nediting frame: rv2v with plate video (H3ImageToRefVideo)")
+cap10 = run_enhance(task_type="rv2v", same_subject=True,
+                    images_batch=batch, source_video=src_video)
+t10 = cap10["user_text"]
+check("rv2v: editing frame injected",
+      "CHARACTER-REPLACEMENT EDITING FRAME" in t10)
+check("rv2v: motion inheritance demanded",
+      "MOTION INHERITANCE" in t10 and "screen position" in t10)
+check("rv2v: integration/optics/lighting carried",
+      "INTEGRATION" in t10 and "OPTICS" in t10 and "LIGHTING" in t10)
+check("rv2v: no new scene rule",
+      "Do NOT write a new scene" in t10)
+
+print("\nediting frame: ri2v with source video")
+cap10b = run_enhance(task_type="ri2v", same_subject=True,
+                     images_batch=batch, source_video=src_video)
+t10b = cap10b["user_text"]
+check("ri2v: editing frame injected",
+      "CHARACTER-REPLACEMENT EDITING FRAME" in t10b)
+check("ri2v: plate partially_preserved demanded",
+      "partially_preserved" in t10b)
+
+print("\nediting frame: ri2v scene-as-image (no plate video) — NOT injected")
+cap10c = run_enhance(task_type="ri2v", same_subject=True,
+                     images_batch=batch, source_video=None,
+                     source_image=scene_img)
+t10c = cap10c["user_text"]
+check("scene-as-image: editing frame absent (no <Video 1> plate)",
+      "CHARACTER-REPLACEMENT EDITING FRAME" not in t10c)
+
 print(f"\nALL {PASS} CHECKS PASSED")
