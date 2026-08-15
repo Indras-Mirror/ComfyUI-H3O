@@ -352,4 +352,36 @@ check("no phrase: per-image rules stay (widget off)",
       "SCENE/REPLACEMENT RULE" in cap8b["user_text"]
       and "SAME SUBJECT:" not in cap8b["user_text"])
 
+# ── 9. exact picture-count bound ───────────────────────────────────────────
+# The LLM sometimes fabricates <Picture N> beyond the attached count (e.g.
+# wrote <Picture 6>..<Picture 9> with only 5 images attached). The ref
+# section now hard-bounds the valid <Picture N> labels.
+print("\nexact picture-count bound (3 images attached)")
+cap9 = run_enhance(task_type="rv2v", same_subject=True,
+                   images_batch=batch, source_video=src_video)
+t9 = cap9["user_text"]
+check("bound: 'EXACTLY 3 reference images are attached'",
+      "EXACTLY 3 reference image(s) are attached" in t9)
+check("bound: lists all valid pictures in order",
+      "<Picture 1>, <Picture 2>, <Picture 3>" in t9)
+check("bound: forbids labels beyond the count",
+      "beyond <Picture 3> does not exist" in t9
+      and "MUST NOT appear" in t9)
+check("bound: every picture listed must be in retention",
+      "Every listed picture MUST appear in retention_analysis" in t9
+      and "none is weak_reference" in t9)
+check("bound: no fabricated label beyond the count",
+      "beyond <Picture 3> does not exist" in t9
+      and "MUST NOT appear" in t9)
+
+print("bound with 5 images (images_batch)")
+imgs5 = torch.stack([make_img(seed=s) for s in range(5)])
+cap9b = run_enhance(task_type="rv2v", same_subject=True,
+                    images_batch=imgs5, source_video=src_video)
+t9b = cap9b["user_text"]
+check("bound: 5-image case lists exactly 5 pictures",
+      "EXACTLY 5 reference image(s) are attached" in t9b
+      and "<Picture 1>, <Picture 2>, <Picture 3>, <Picture 4>, <Picture 5>" in t9b
+      and "beyond <Picture 5> does not exist" in t9b)
+
 print(f"\nALL {PASS} CHECKS PASSED")

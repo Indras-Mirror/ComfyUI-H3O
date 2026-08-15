@@ -1386,6 +1386,20 @@ class H3PromptEnhancer:
                                     f"(label as Picture {i+1} or Subject {i+1}).\n")
             if ref_images:
                 ref_section += "\n"
+                # Hard bound on <Picture N> labels: the renderer binds pictures by
+                # ORDER of the attached refs only — no other picture label exists.
+                # Stops the LLM inventing <Picture 6>, <Picture 9>, etc. when the
+                # user attached 5 images (phantom labels steer identity nowhere).
+                n_p = len(ref_images)
+                pic_list = ", ".join(f"<Picture {i + 1}>" for i in range(n_p))
+                ref_section += (
+                    f"EXACTLY {n_p} reference image(s) are attached, in this order: "
+                    f"{pic_list}. Use NO other <Picture N> label — any picture "
+                    f"beyond <Picture {n_p}> does not exist in this generation and "
+                    "MUST NOT appear in subject_definitions, retention_analysis, "
+                    "or detailed_description. Every listed picture MUST appear in "
+                    "retention_analysis; none is weak_reference, none is 'not "
+                    "appearing'.\n\n")
 
         # ── Same-subject + style-transfer directives ─────────────────────
         # Appended to the reference section so the LLM merges multiple photos
