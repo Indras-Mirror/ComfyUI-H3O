@@ -9,6 +9,8 @@ companion nodes.
   into MiniMax H3's structured prompt format
 - [**H3AspectRatioDetector**](#h3aspectratiodetector) — auto-match the
   Resolution Selector canvas to a source image's aspect ratio
+- [**H3RefBoostV**](#h3refboostv) — attention-level reference V-boost +
+  source V-damp (the strong identity lever, norm-cancellation-proof)
 
 ---
 
@@ -29,6 +31,18 @@ The output schema switches on the **task_type** widget:
 | `fl2v` | first + last frame anchors | 3 fields |
 | `l2v` | last-frame only (converge to image) | 3 fields |
 | `r2v` | full-reference mode (subject/picture/video/audio labels) | 6 fields |
+| `rv2v` | static ref-video = scene, images = replacement characters (legacy two-subject) | 6 fields |
+| `ri2v` | **reference images replace a character in a source video, scene/structure preserved** | 6 fields |
+
+**`ri2v` is the recommended character-swap mode.** It reuses the proven `r2v`
+6-field template and applies the empirically-correct retention recipe that made
+`video_minimax_h3_r2v_H3Prompt_VSR_Mask.json` work: the replacement character is
+`fully_preserved`, each `<Picture N>` face/hair source is `weak_reference`, the
+source `<Video N>` is `partially_preserved` (scene/structure kept, replaced
+character fully replaced), and the original character is **never named as its
+own subject**. This is the opposite of `rv2v`'s two-subject recipe
+(original=`weak_reference`, replacement=`attribute_transfer`), which renders the
+original unchanged.
 
 **3-field (base)** format:
 
@@ -116,6 +130,7 @@ output, for inspection/debugging.
 | `advanced_prompt` | on | Community H3-Context-IR refinements: camera-motion vocabulary, stable speaker IDs, voiceover phrasing, audio-binding rules |
 | `custom_system_prompt` | "" | Full override of the built-in system prompt |
 | `duration` | 5.0s | Drives shot pacing / cut timing in the template |
+| `seed` | -1 | -1 = fresh random each run (new prompt per queue), 0+ = fixed & reproducible. Sent to the LLM backend alongside temperature. |
 
 ### Quick example
 
@@ -147,6 +162,73 @@ socket and the canvas width/height follow automatically — no manual selection.
 Outputs: `aspect_ratio` (COMBO string), `width`, `height`, `ratio` (float w/h).
 The optional `aspect_ratio` string input is a manual override, e.g.
 `"21:9 (Ultrawide)"`.
+
+---
+
+## H3RefBoostV
+
+The **attention-level** identity lever. It scales the **VALUE rows** inside
+self-attention — the one place H3's normalization stack can't cancel a scale.
+
+### Why not just `ref_scale`?
+
+Latent-level amplitude scaling (`H3RefBoostChar.ref_scale` / `.source_scale`)
+multiplies the conditioning latent, which then passes through
+`video_patch_proj` (a Linear **with bias**) and the DiT's RMSNorm. RMSNorm is
+scale-invariant, so only a subtle "bias-mediated" residual survives — that's
+why amplitude dials are weak. Bernini RefBoost V2/V3 moved off amplitude
+scaling for exactly this reason.
+
+The value projection is different: `out_i = Σ_j attn_ij · v_j`. Scaling the V
+rows of a reference makes it proportionally louder in every token update, and
+no LayerNorm/RMSNorm on Q or K can undo it (Q and K are RMSNorm'd; V is not).
+
+### What it does
+
+- `ref_v_boost` — multiply the V rows of the **selected character image refs**
+  up (default 1.3). 1.15-1.3 = noticeable, 1.4-1.6 = strong, >1.8 risks
+  oversaturation.
+- `source_v_scale` — multiply the V rows of the **source ref-video** down
+  (default 0.8). Weakens the source person so the replacement wins. 0.7-0.9
+  typical.
+- `ref_slots` — which image refs are the character ("0", "0,1", "all").
+- `schedule` / `step_threshold` — sigma ramp; same semantics as `H3RefBoostChar`.
+
+Both scales ramp from neutral (1.0) at high sigma to their target at low sigma,
+so the structure pass is untouched and the identity pass does the work.
+
+### How it works (no core edit)
+
+A `DIFFUSION_MODEL` wrapper resolves each ref block's absolute row range in the
+packed sequence once per run (from `PackedLayout.segments`), then each step
+writes `{ranges + ramped scales}` into `transformer_options`.
+`comfy.ldm.minimax.model.Attention.forward` is replaced once at `apply()` time
+with a **class-level** patch (runtime monkeypatch, not a core file edit); when
+the key is absent it delegates to the original forward untouched, so every other
+H3 workflow is unaffected.
+
+### Sol-Attn compatibility (fixed 2026-08-14)
+
+An earlier instance-level patch was silently bypassed by Sol-Attn: its
+`_compose_module_patch` wraps *instance* `attn.forward` attrs and, for eligible
+calls, runs `type(module).forward` — the original — so V-scaling never executed
+(renders looked identical to no boost). The class-level patch has no instance
+attr, so Sol-Attn's compose hook skips it: our V-scaling runs every call and
+the scaled q/k/v still reach `optimized_attention`, where Sol-Attn's override
+dispatches eligible calls to its kernel. Both compose. Patch-Sage composition
+untested.
+
+### Placement
+
+Place it **before Spectrum** in the chain (both are DIFFUSION_MODEL wrappers;
+Spectrum must observe the post-expansion layout).
+
+### Status
+
+Unit-tested (24/24) against the real `PackedLayout` and the real `Attention`
+module (with stubbed GPU kernels), including Sol-Attn-bypass proof.
+**Render-test of the class-level patch pending** (the pre-fix renders did not
+exercise the V-scaling at all).
 
 ---
 

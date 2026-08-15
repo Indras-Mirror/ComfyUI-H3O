@@ -9,12 +9,15 @@ import base64
 import json
 import logging
 import os
+import time
 import urllib.error
 import urllib.request
 from io import BytesIO
 
 import numpy as np
 from PIL import Image
+
+_time = time
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -104,9 +107,15 @@ def _tensor_to_base64(tensor, max_size=848):
 
 
 def _call_openrouter(api_key, model, system_prompt, user_content,
-                     timeout=120, temperature=0.7, max_tokens=2048, retries=2):
-    """Call OpenRouter chat completions API with retry on transient errors."""
-    import time as _time
+                     timeout=120, temperature=0.7, max_tokens=2048, retries=2,
+                     seed=None):
+    """Call OpenRouter chat completions API with retry on transient errors.
+
+    `seed` (optional): pass an int >= 0 for reproducible sampling, or -1 for a
+    fresh random seed each call. None / omitted leaves the payload unchanged
+    (provider-side non-deterministic sampling) for backward compatibility.
+    """
+    _time = time
 
     messages = [{"role": "user", "content": user_content}]
     if system_prompt:
@@ -118,6 +127,10 @@ def _call_openrouter(api_key, model, system_prompt, user_content,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if seed is not None:
+        if seed < 0:
+            seed = int.from_bytes(os.urandom(4), "big")
+        payload["seed"] = seed
 
     data = json.dumps(payload).encode("utf-8")
     headers = {
@@ -219,7 +232,8 @@ def _call_openrouter(api_key, model, system_prompt, user_content,
 
 
 def _call_ollama_chat(ollama_url, model_name, user_content, system_prompt="",
-                      temperature=0.7, max_tokens=2048, timeout=180):
+                      temperature=0.7, max_tokens=2048, timeout=180,
+                      seed=None):
     """Send a chat completion to Ollama's OpenAI-compatible endpoint.
 
     Same interface as _call_local_chat. Ollama handles model lifecycle
@@ -237,6 +251,10 @@ def _call_ollama_chat(ollama_url, model_name, user_content, system_prompt="",
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if seed is not None:
+        if seed < 0:
+            seed = int.from_bytes(os.urandom(4), "big")
+        payload["seed"] = seed
 
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}

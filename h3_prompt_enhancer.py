@@ -12,6 +12,7 @@ introduce a second LLM backend.
 import json
 import logging
 import os
+import re
 
 # ── Reuse the existing LLM client and helpers from nodes.py ─────────────────
 from .h3o_shared import (
@@ -52,6 +53,8 @@ Rules:
 - Base mode (T2V/I2V/FL2V/L2V): no subject_definitions/summary/retention_analysis/detailed_description sections.
 - I2V/FL2V/L2V: the first line MUST be the image-alignment instruction (see the official guide).
 - Write camera motion as natural English within the shot: "The camera pushes in with small amplitude at slow speed."
+- ANY vocalization (moans, groans, laughter, screams, gasps) belongs to a speaker with a stable ID — never attribute
+  such sounds to a nameless subject. Nonverbal vocalizations are described in prose OUTSIDE <d>, with the speaker's (Sx) ID.
 - Preserve the user's intent. Supplement underspecified details (lighting, camera angle, ambient sound, music).
 - English only. No markdown fences around the final output.
 - NSFW content: describe with anatomical precision; do not self-censor.
@@ -82,15 +85,21 @@ In/Pull Out, Pan Left/Right, Truck Left/Right, Tilt Up/Down, Pedestal Up/Down, A
 Shot, Tracking Shot, Static Shot, Shake Slightly/Strongly, POV, Roll
 Clockwise/Counterclockwise.
 
-Speakers get stable global IDs (S1), (S2), compound (S1,S2) for simultaneous group
-speech. IDs persist across shots; characters who never vocalize get none. Establish
-identity (type, age, gender, pitch, timbre, rate, accent) outside the tag. All spoken
-content goes inside <d>[Language] actual words.</d> with a real language tag, preserved
-verbatim. Voiceover uses the exact phrase "says in an off-screen voiceover" and states
-"the character's lips remain completely closed." Dialogue crossing a cut places
-<scenetrans> at both connection points with audio continuing across; speech truncated
-by the video's end uses <cutoff>; [unclear] marks unintelligible spans; on-screen text
-appears in English double quotes. Standardize punctuation to , . ? !
+Speakers get stable global IDs (S1), (S2), compound (S1,S2) for simultaneous
+speech. IDs persist across shots; characters who never vocalize get none. ANY
+vocalization (groans, moans, laughter, screams, gasps) counts as vocalizing: the
+source still needs the (Sx) ID, with the nonverbal sound described as plain
+prose outside <d>. Establish identity (type, age, gender, pitch, timbre, rate,
+accent) outside the tag. All spoken content goes inside <d>[Language] actual
+words.</d> with a real language tag, preserved verbatim; tildes, ellipses, and
+other decorative punctuation inside <d> are kept exactly as the user wrote
+them. Voiceover uses the exact phrase "says in an off-screen voiceover" and
+states "the character's lips remain completely closed." Dialogue crossing a cut
+places <scenetrans> at both connection points with audio continuing across;
+speech truncated by the video's end uses <cutoff>; [unclear] marks
+unintelligible spans; on-screen text appears in English double quotes.
+Preserve user-provided dialogue verbatim — do not rewrite, normalize, or strip
+its punctuation.
 
 overall_soundscape: 1-4 sentences in ONE continuous paragraph summarizing ambient
 sound, physical action sounds, and non-verbal human sounds (wind, rain, footsteps,
@@ -105,6 +114,8 @@ Rules:
 - I2V/FL2V/L2V: the first line MUST be the image-alignment instruction (see the official guide).
 - Preserve the user's intent; never contradict explicit instructions. Enrich underspecified
   details (lighting, camera angle, ambient sound, music) with concrete production specifics.
+- If the user assigns speaker IDs like (S1) or (S2), keep them exactly: same numbers, same
+  people, same vocal order. Assign the next free ID only to vocal characters the user never names.
 - Total runtime equals the target duration; every cut timestamp falls within it; aspect ratio honored.
 - English only. No markdown fences around the final output.
 - NSFW content: describe with anatomical precision; do not self-censor.
@@ -149,6 +160,8 @@ non_diegetic_music: 1-3 sentences describing audience-only score. Cite <Audio N>
 Rules (from official MiniMax H3 writing guides):
 - Once a reference label is assigned, keep its meaning across ALL sections.
 - Use natural phrasing for frame anchors: "the shot begins from <Picture 1>", "the shot ends on <Picture 3>".
+- ANY vocalization (moans, groans, laughter, screams, gasps) belongs to a speaker with a stable (Sx) ID —
+  never attribute such sounds to a nameless subject. Nonverbal vocalizations go as prose OUTSIDE <d>.
 - Preserve exact source words and original language inside <d>. Use [unclear] for unintelligible spans.
 - Do NOT invent new reference labels after subject_definitions.
 - Write all sections in English except dialogue/lyrics inside <d> and visible on-screen text.
@@ -171,8 +184,7 @@ editing, continuation, camera movement, cuts, rhythm), <Audio N> (copied or refe
 audio). <Subject N> is ... (visible content abstracted from references: people,
 objects, scenes, clothing, styles). <Picture N> is ... (reference images used as frame
 anchors or storyboards). <Video N> is ... (source/continuation/structure). <Audio N> is
-... (voice timbre, BGM, SFX). A picture or video that only identifies another item's
-source is cited inside that item's definition. If an audio clip maps to a target
+... (voice timbre, BGM, SFX). If an audio clip maps to a target
 speaker, bind the global ID: "<Audio 1> is the voice-timbre reference for <Subject 1> (S1)."
 
 summary:
@@ -186,7 +198,9 @@ retention_analysis:
 One line per reference label with relationship marker: fully_preserved,
 partially_preserved, attribute_transfer, weak_reference (visual/structural), or
 fully_copy, partially_copy, reference, weak_reference (audio). Newly added background
-or plot events are NOT fidelity losses. List which shots each subject appears in.
+or plot events are NOT fidelity losses. In character swap every reference picture is
+attribute_transfer — never weak_reference; no picture is "not appearing". List which
+shots each subject appears in.
 
 detailed_description:
 The main body — 350-500 words (generation) or scaled to source complexity (editing).
@@ -196,7 +210,10 @@ times within the target duration; prefer camera motion over a cut for slight cha
 Camera motion as natural English (type + amplitude + speed). Speakers: <Subject N>
 (Sx) with stable global speaker IDs across shots; compound (S1,S2) for group speech;
 identity established outside the tag; dialogue verbatim inside
-<d>[Language] actual words.</d>. Voiceover: "says in an off-screen voiceover" with
+<d>[Language] actual words.</d>. ANY vocalization (groans, moans, laughter, screams,
+gasps) is a vocal event: the source must have or be given an (Sx) ID, with the
+nonverbal sound described as plain prose — such utterances are never voiced by a
+nameless subject. Voiceover: "says in an off-screen voiceover" with
 "the character's lips remain completely closed." <scenetrans> / <cutoff> for dialogue
 crossing cuts / truncated by video end; [unclear] for unintelligible spans; on-screen
 text in English double quotes; punctuation standardized to , . ? !
@@ -213,6 +230,8 @@ music belongs in detailed_description, not here.
 
 Rules (from official MiniMax H3 writing guides + community refinements):
 - Once a reference label is assigned, keep its meaning across ALL sections.
+- If the user assigns speaker IDs like (S1) or (S2), keep them exactly: same numbers, same
+  people, same vocal order. Assign the next free ID only to vocal characters the user never names.
 - Do NOT invent new reference labels after subject_definitions.
 - Audio cannot appear as a general reference on its own — a reference image or video
   must accompany it. Frame anchors and general references are mutually exclusive.
@@ -225,6 +244,177 @@ Rules (from official MiniMax H3 writing guides + community refinements):
 
 Return ONLY the six fields as plain text — no JSON wrapper, no extra commentary."""
 
+
+# ── RV2V subject-mode blocks (injected into H3_RV2V_SYSTEM_PROMPT_ADV) ──────
+# same_subject=False (default): each ref image is its own replacement character.
+# same_subject=True: all ref images are ONE person (multiple views merged into
+# a single <Subject 1>) — the batch use case.
+H3_RV2V_SEMANTICS_SEPARATE = (
+    "- The reference images (<Picture 1>, <Picture 2>, ...) are REPLACEMENT "
+    "characters: each picture defines the appearance of a character to swap into "
+    "<Video 1>'s scene (<Picture 1> -> the source video's existing character, or "
+    "a new character the user wants).\n"
+    "- NEVER treat the pictures as the same person as each other unless the user "
+    "says so. Each picture anchors its own replacement character — always bind the "
+    "character's appearance to its exact <Picture N> label, never to an invented "
+    "name the model cannot connect to the image.\n"
+    "- You may give each character a speaking name (<Subject N>) for speaker tags, "
+    "but ALWAYS define it as \"<Subject N> is the person from <Picture N> with ...\"."
+)
+
+H3_RV2V_SEMANTICS_SAME = (
+    "- The reference images (<Picture 1>, <Picture 2>, ...) are ALL THE SAME person — "
+    "multiple views (face, body, tattoos, outfit, back-view) of ONE replacement "
+    "character who swaps into <Video 1>'s scene. <Picture 1> is the primary view; "
+    "<Picture 2>+ are additional angles/detail of the SAME person.\n"
+    "- NEVER split the pictures into separate people: they define ONE unified "
+    "character. Give that single character ONE speaking name (<Subject 1>) and "
+    "define it as \"the unified person from <Picture 1>, with additional views in "
+    "<Picture 2>, <Picture 3>, ...\". Never <Subject 2>, <Subject 3>, etc."
+)
+
+H3_RV2V_DEFS_SEPARATE = (
+    "Each reference image anchors its own replacement character: \"<Subject 1> is "
+    "the person from <Picture 1> with [identity features]\" — the <Picture N> "
+    "label is what binds the description to the image."
+)
+
+H3_RV2V_DEFS_SAME = (
+    "<Subject 1> is the ONE unified person whose appearance merges <Picture 1> "
+    "plus every additional view (<Picture 2>, ...): face, hair, body, skin tone, "
+    "distinguishing marks, clothing. Do NOT create <Subject 2>, <Subject 3>, etc. — "
+    "all reference images feed the single character anchored at <Picture 1>."
+)
+
+H3_RV2V_RETENTION_SEPARATE = (
+    "Character-swap retention (REQUIRED): mark <Video 1> as partially_preserved "
+    "(scene, framing, lighting, camera preserved; the character being replaced is "
+    "swapped out). Each REPLACEMENT character (<Subject N> from <Picture N>) is "
+    "attribute_transfer — transfer face, body, hair style, hair color, skin tone, "
+    "clothing, and makeup from the reference. Mark each <Picture N> as "
+    "attribute_transfer TOO — every reference picture is a STRONG identity source "
+    "whose features must be transferred; never mark an identity picture as "
+    "weak_reference. Do NOT name the replaced character as its own <Subject N>; "
+    "describe it only as the person being replaced inside <Video 1>'s definition."
+)
+
+H3_RV2V_RETENTION_SAME = (
+    "Character-swap retention (REQUIRED): mark <Video 1> as partially_preserved "
+    "(scene, framing, lighting, camera preserved; the character being replaced is "
+    "swapped out). <Subject 1> (the unified person from all reference images) is "
+    "attribute_transfer — transfer face, body, hair style, hair color, skin tone, "
+    "clothing, and makeup from the reference. Mark each <Picture N> as "
+    "attribute_transfer TOO — every reference picture is a STRONG identity source "
+    "whose features must be transferred; never mark an identity picture as "
+    "weak_reference. Do NOT name the replaced character as its own <Subject N>; "
+    "describe it only as the person being replaced inside <Video 1>'s definition."
+)
+
+H3_RV2V_RULES_SEPARATE = (
+    "- Each reference IMAGE (<Picture N>) anchors a SEPARATE replacement character "
+    "unless the user says they're the same person.\n"
+    "- Do NOT define the ORIGINAL character from <Video 1> as its own <Subject N>. "
+    "Describe it only as the person being replaced inside <Video 1>'s definition "
+    "(e.g. \"the woman in <Video 1>, fully replaced\"). Use attribute_transfer for "
+    "each replacement character.\n"
+    "- REFERENCES ARE STRONG (REQUIRED): every reference picture carries identity "
+    "that must reach the render — mark EVERY <Picture N> as attribute_transfer. "
+    "There is NO weak_reference in character swap — no picture is 'identity source "
+    "only', none is 'not appearing'. If a picture shows a body part, tattoo, or "
+    "outfit detail, that detail is transferred into its <Subject N>'s definition."
+)
+
+H3_RV2V_RULES_SAME = (
+    "- All reference IMAGES (<Picture 1>..<Picture N>) define the SAME <Subject 1> — "
+    "one unified person, multiple views. Never define separate per-image subjects.\n"
+    "- Do NOT define the ORIGINAL character from <Video 1> as its own <Subject N>. "
+    "Describe it only as the person being replaced inside <Video 1>'s definition "
+    "(e.g. \"the woman in <Video 1>, fully replaced\"). Use attribute_transfer for "
+    "the replacement character.\n"
+    "- REFERENCES ARE STRONG (REQUIRED): every reference picture carries identity "
+    "that must reach the render — mark EVERY <Picture N> as attribute_transfer. "
+    "There is NO weak_reference in character swap — no picture is 'identity source "
+    "only', none is 'not appearing'. If a picture shows a body part, tattoo, or "
+    "outfit detail, that detail is transferred into <Subject 1>'s definition."
+)
+
+H3_RV2V_SYSTEM_PROMPT_ADV = """\
+You are a Creative Assistant for MiniMax H3 video generation in REFERENCE-IMAGE-AS-VIDEO
+to video (RV2V) mode — the H3 equivalent of Bernini subject-to-video (R2V). Given the
+user's raw request and reference media, write the complete 6-field structured prompt H3 expects.
+
+Key RV2V semantics:
+- The static reference video (<Video 1>) carries the SCENE: its setting, framing,
+  lighting, background, camera movement, and any characters that stay unchanged.
+{subject_semantics}
+- Task type is [reference generation]. The target video keeps <Video 1>'s scene and
+  replaces characters with the reference-image subjects.
+
+Output SIX fields in this exact order:
+
+subject_definitions:
+One line per label. <Video 1> is ... (the static scene reference clip — its setting,
+framing, lighting, and unchanged characters are the target video's scene).
+{subject_defs}
+<Audio N> is ... (audio assets if provided).
+
+summary:
+[reference generation] ONE short paragraph: the target video keeps <Video 1>'s scene
+while <Subject N> (from the <Picture N> reference images) replaces the scene's character(s). If
+the source video's scene has characters to replace, say which replaces which.
+
+retention_analysis:
+One line per reference label with relationship marker: <Video 1> is partially_preserved
+(scene, framing, lighting, camera preserved; characters listed get replaced or stay).
+{subject_retention}
+List which shots each subject appears in.
+
+detailed_description:
+The main body — 350-500 words. Style established in 1-2 sentences BEFORE [Shot 1].
+No timestamp on [Shot 1]. Later shots: "[Shot N] At MM:SS.mmm, the camera cuts to ..."
+with strictly increasing cut times within the target duration; prefer camera motion over a cut
+for slight changes. Camera motion as natural English (type + amplitude + speed). Speakers:
+<Subject N> (Sx) with stable global speaker IDs across shots; compound (S1,S2) for group
+speech; identity established outside the tag; dialogue verbatim inside
+<d>[Language] actual words.</d>. ANY vocalization (groans, moans, laughter, screams,
+gasps) is a vocal event: the source must have or be given an (Sx) ID, with the
+nonverbal sound described as plain prose. Voiceover: "says in an off-screen voiceover" with
+"the character's lips remain completely closed." <scenetrans> / <cutoff> for dialogue
+crossing cuts / truncated by video end; [unclear] for unintelligible spans; on-screen
+text in English double quotes; punctuation standardized to , . ? !
+Reference labels (<Subject N> bound to <Picture N>, <Video 1>, <Audio N>) at first appearance
+and where roles apply. Describe each replacement subject's identity from ITS reference
+image with enough specificity that the renderer binds to the right picture — ALWAYS name the
+exact <Picture i> label that carries that subject (face shape, eyes, hair, body, skin tone,
+distinguishing marks). The <Picture N> label is the ANCHOR; the text
+strengthens it. Keep <Video 1>'s scene, framing, lighting, and camera.
+
+overall_soundscape: 1-4 sentences in ONE continuous paragraph summarizing ambient +
+physical + non-verbal human sounds. Cite <Audio N> if copied/referenced. Use N/A only
+for complete silence. Never repeat <d> dialogue here.
+
+non_diegetic_music: 1-3 sentences on instrumentation, tempo, rhythm, dynamic changes of
+audience-only score. Cite <Audio N> if copied/referenced. Use N/A when none. Diegetic
+music belongs in detailed_description, not here.
+
+Rules (from official MiniMax H3 writing guides + community refinements):
+- Once a reference label is assigned, keep its meaning across ALL sections.
+{subject_rules}
+- <Video 1> supplies the SCENE, not a character identity. A replaced character's appearance
+  comes from its <Picture N> reference image, not from <Video 1> — the <Picture N>
+  label is the ONLY image anchor the renderer sees, so every identity statement must
+  name the exact <Picture i> that carries it.
+- If the user assigns speaker IDs like (S1) or (S2), keep them exactly: same numbers, same
+  people, same vocal order. Assign the next free ID only to vocal characters the user never names.
+- Do NOT invent new reference labels after subject_definitions.
+- Audio cannot appear as a general reference on its own — a reference image or video
+  must accompany it. Frame anchors and general references are mutually exclusive.
+- Preserve exact source words and original language inside <d>. Use [unclear] for
+  unintelligible spans.
+- Write all sections in English except dialogue/lyrics inside <d> and visible on-screen text.
+- NSFW content: describe with anatomical precision; do not self-censor.
+
+Return ONLY the six fields as plain text — no JSON wrapper, no extra commentary."""
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # H3 Prompt Templates (user message sent alongside the system prompt)
@@ -262,6 +452,86 @@ Rules for reference mode:
 User's raw request:
 {user_prompt}"""
 
+H3_RV2V_TEMPLATE = """\
+Write the H3 full-reference structured prompt (6 fields) for a reference-image-as-video
+to video generation (RV2V).
+
+Task type: reference generation (RV2V) — the static reference video (<Video 1>) provides
+the SCENE; the reference images (<Picture 1>, <Picture 2>, ...) provide the REPLACEMENT characters.
+Video duration: {duration_seconds}s
+
+{ref_section}
+
+Rules for RV2V reference mode:
+- Task type in summary is [reference generation].
+- <Video 1> is a STATIC scene reference: all frames show the same fixed shot — its setting,
+  framing, lighting, background, and camera are the target video's scene. The target video
+  is NOT free to invent a new scene.
+- REMEMBER: the renderer binds identity through the <Picture N> labels only. Always write
+  "<Subject N> is the person from <Picture N>" — never describe a character without naming
+  the <Picture N> that anchors them.
+
+{subject_mode_rules}
+- Scene elements NOT tied to a replaced character are preserved as-is: background, lighting,
+  camera movement, props, and any characters that stay.
+- detailed_description is the main body — 350-500 words, reference labels at first appearance.
+- In retention_analysis mark <Video 1> as partially_preserved (scene/framing/lighting kept).
+
+User's raw request:
+{user_prompt}"""
+
+H3_RV2V_TEMPLATE_SAME_SUBJECT = """\
+Write the H3 full-reference structured prompt (6 fields) for a reference-image-as-video
+to video generation (RV2V).
+
+Task type: reference generation (RV2V) — the static reference video (<Video 1>) provides
+the SCENE; the reference images (<Picture 1>, <Picture 2>, ...) provide the REPLACEMENT characters.
+Video duration: {duration_seconds}s
+
+{ref_section}
+
+Rules for RV2V reference mode:
+- Task type in summary is [reference generation].
+- <Video 1> is a STATIC scene reference: all frames show the same fixed shot — its setting,
+  framing, lighting, background, and camera are the target video's scene. The target video
+  is NOT free to invent a new scene.
+- REMEMBER: the renderer binds identity through the <Picture N> labels only. Always write
+  "<Subject N> is the person from <Picture N>" — never describe a character without naming
+  the <Picture N> that anchors them.
+
+{subject_mode_rules}
+- Scene elements NOT tied to a replaced character are preserved as-is: background, lighting,
+  camera movement, props, and any characters that stay.
+- detailed_description is the main body — 350-500 words, reference labels at first appearance.
+- In retention_analysis mark <Video 1> as partially_preserved (scene/framing/lighting kept).
+
+User's raw request:
+{user_prompt}"""
+
+H3_RV2V_SUBJECT_RULES_SEPARATE = """\
+- Each reference image anchors a REPLACEMENT character: "<Subject 1> is the person from
+  <Picture 1> with [full appearance — face, hair, body, skin, clothing, distinguishing marks]"
+  — the character whose attributes replace the corresponding character in <Video 1>'s scene.
+- In retention_analysis mark each replacement character as attribute_transfer — transfer
+  the face, body, hair style, hair color, skin tone, clothing, and makeup from the reference.
+  Mark EVERY <Picture N> as attribute_transfer — every reference picture is a STRONG
+  identity source whose features must reach the render. NEVER use weak_reference for a
+  character reference picture. Do NOT name the replaced character as its own subject —
+  describe it only inside <Video 1>'s definition."""
+
+H3_RV2V_SUBJECT_RULES_SAME = """\
+- ALL reference images show the SAME person (multiple views — face, body, detail).
+  <Picture 1> defines the ONE unified subject: "<Subject 1> is the person from <Picture 1>
+  with [full appearance]". The remaining images (<Picture 2>, ...) are ADDITIONAL VIEWS of
+  that same <Subject 1> — merge their features into its single definition. NEVER split into
+  separate per-image subjects — every image is a view of the same single person.
+- In retention_analysis mark <Subject 1> as attribute_transfer — transfer the face, body,
+  hair style, hair color, skin tone, clothing, and makeup from the reference pictures.
+  Mark EVERY <Picture N> as attribute_transfer — all reference pictures are STRONG
+  identity sources and must feed the transfer. NEVER use weak_reference for a character
+  reference picture. Do NOT name the replaced character as its own subject — describe it
+  only inside <Video 1>'s definition."""
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Task-type metadata
@@ -273,15 +543,87 @@ H3_TASK_LABELS = {
     "fl2v": "FL2V (first-and-last-frame, two image anchors)",
     "l2v": "L2V (last-frame only, converge to the image at the end)",
     "r2v": "R2V (full-reference mode with subject/picture/video/audio labels)",
+    "rv2v": "RV2V (static reference video = scene, reference images = replacement characters)",
+    "ri2v": "RI2V (reference images to video — scene from ref image or source video, character identity from ref images)",
 }
 
 H3_BASE_TASK_TYPES = {"t2v", "i2v", "fl2v", "l2v"}
+H3_RV2V_TASK_TYPES = {"rv2v"}
+# ri2v reuses the proven r2v 6-field template (LLM-chosen retention), with a
+# scene-labeled source video and a replacement-preservation override. It is
+# deliberately NOT in H3_RV2V_TASK_TYPES so it routes through the r2v branch.
+H3_RI2V_TASK_TYPES = {"ri2v"}
+
+H3_REF_STRONG_RULE = """\
+REFERENCES ARE STRONG (REQUIRED, character swap): every reference picture is an
+identity source whose features MUST reach the target. In retention_analysis mark
+EVERY character reference <Picture N> as attribute_transfer — never weak_reference.
+No picture is "identity source only", "not reproduced as a frame", or "not
+appearing in the scene". When a picture shows a body part, tattoo, clothing, or
+detail, that detail is transferred into the <Subject N> definition it anchors."""
 
 H3_SAME_SUBJECT_RULE = """\
 SAME SUBJECT: ALL reference images show the SAME person/subject from different
 angles, poses, or lighting. Analyze them as ONE unified subject — combine identity
 features from every reference into a single subject definition, and never treat
-image0 / image1 / image2 as different people."""
+<Picture 1> / <Picture 2> / <Picture 3> as different people.
+REFERENCES ARE STRONG: every reference picture feeds the subject's identity —
+mark EVERY <Picture N> as attribute_transfer, never weak_reference. No picture is
+"identity source only" or "not appearing in the scene"; each contributes its
+face/body/outfit details to the unified <Subject 1>."""
+
+H3_RV2V_SAME_SUBJECT_RULE = """\
+SCENE/REPLACEMENT RULE: the static reference video (<Video 1>) provides the SCENE —
+its setting, framing, lighting, background, and camera. The reference images
+(<Picture 1>, <Picture 2>, ...) define the REPLACEMENT characters that appear in that scene.
+Each reference image anchors its OWN replacement character (<Picture 1> -> <Subject 1>,
+<Picture 2> -> <Subject 2>, ...) unless the user explicitly says two images are the same person.
+Never merge the reference images into one subject, and never treat <Video 1>'s
+content as the identity of a replaced character — it is the scene."""
+
+# RI2V retention recipe — character-swap structure matching the community
+# minimaxH3Character workflow: replacement = attribute_transfer (transfer
+# face/body/hair/clothing from reference), picture refs = attribute_transfer,
+# all references STRONG (never weak_reference),
+# source video = partially_preserved, replaced character NOT named as own subject.
+H3_RI2V_RULE = """\
+CHARACTER-SWAP RETENTION (REQUIRED): mark the source video <Video N> as
+partially_preserved — its scene, structure, framing, camera, timing, and background
+are kept, while the character being replaced is swapped out. Mark the REPLACEMENT
+character(s) from the reference pictures as attribute_transfer — transfer the
+face, body, hair style, hair color, skin tone, clothing, and makeup from the
+reference picture onto the character in the video. Describe their full appearance
+in subject_definitions. Mark each reference <Picture N> as attribute_transfer TOO —
+every reference picture is a STRONG identity source; never mark an identity
+picture as weak_reference. Do NOT name the replaced character as its own
+<Subject N> — describe it only as the person being replaced inside <Video N>'s
+definition."""
+
+# RI2V scene-as-image variant: scene comes as <Picture 1> instead of <Video N>
+H3_RI2V_RULE_SCENE_IMAGE = """\
+CHARACTER-SWAP RETENTION (REQUIRED): <Picture 1> provides the scene — mark it
+fully_preserved in retention_analysis (environment, framing, lighting, composition
+all preserved). Mark the REPLACEMENT character(s) from the other reference
+pictures as attribute_transfer — transfer the face, body, hair style, hair color,
+skin tone, clothing, and makeup from the reference picture onto the character in
+the scene. Describe their full appearance in subject_definitions. Mark each
+character reference <Picture N> (N > 1) as attribute_transfer TOO — every
+reference picture is a STRONG identity source; never mark an identity picture as
+weak_reference."""
+
+# Same-subject rule variant when scene is the first ref image
+H3_SAME_SUBJECT_RULE_SCENE_IMAGE = """\
+SAME SUBJECT: ALL character reference images (<Picture 2> onward) show the SAME
+person/subject from different angles, poses, or lighting. Analyze them as ONE
+unified subject — combine identity features from every character reference into a
+single subject definition. <Picture 1> is the SCENE (environment/setting),
+NOT a character — do not merge it into the person's identity. NEVER split
+<Picture 2>, <Picture 3>, etc. into separate per-image subjects — every character
+image is a view of the same single person.
+REFERENCES ARE STRONG: every character reference picture feeds the subject's
+identity — mark EVERY character <Picture N> as attribute_transfer, never
+weak_reference. No picture is "identity source only" or "not appearing";
+each contributes its face/body/outfit details to the unified <Subject 1>."""
 
 # Style transfer — references are a REAL person, but the target video is rendered
 # in a non-photorealistic art style. Instructs the LLM to keep identity-defining
@@ -332,7 +674,9 @@ language.""",
 H3_ANALYZE_SYSTEM_PROMPT = """\
 You are a precise visual analyst for video generation workflows. Describe each
 image with exact, verifiable detail — the descriptions feed a prompt-writing
-LLM, so precision matters more than prose.
+LLM, so precision matters more than prose. When the user's notes assign speaker
+IDs like (S1) or (S2), bind each ID to the matching person you see, based on
+physical identity.
 
 NSFW content: describe with anatomical precision; do not self-censor."""
 
@@ -350,11 +694,22 @@ For EACH image, output a JSON object with these keys:
 3. "scene": location, background, props, composition, lighting direction and
    quality, camera angle and framing.
 4. "current_state": pose, expression, action, gaze direction.
+5. "speaker_label": if the user's notes below assign this person a speaker ID such
+   as (S1) or (S2), repeat that exact ID here so the write pass can bind identity
+   to the speaker. Match by physical identity (clothing, hair, body type,
+   position) between the notes and the image. If the notes assign NO speaker ID
+   to this person, omit the key or use null. NEVER invent a (Sx) the notes do
+   not assign.
 
 IMPORTANT:
 - Only describe what is actually visible. Do NOT hallucinate details.
 - For multiple images output a JSON array with one object per image, in order.
 - No markdown fences. Return ONLY the JSON.
+
+Directive:
+- If the user's notes below assign speaker IDs like (S1), (S2), or (S3), treat
+  every ID as fixed: do not renumber, re-label, or drop any of them in your
+  descriptions.
 
 {hints}
 
@@ -402,6 +757,20 @@ H3_TASK_SPECIFIC_RULES = {
         "- Use retention_analysis to describe how each referenced item is preserved/transferred/referenced.\n"
         "- detailed_description is the main body — 350-500 words, reference labels at first appearance."
     ),
+    "rv2v": (
+        "- Full-reference mode with subject_definitions, summary, retention_analysis, detailed_description, "
+        "overall_soundscape, non_diegetic_music.\n"
+        "- <Video 1> is a STATIC SCENE reference: its setting, framing, lighting, background, "
+        "and camera movement are the target video's scene.\n"
+        "- Each reference IMAGE defines a REPLACEMENT character: <Subject 1> is the person from "
+        "<Picture 1>, <Subject 2> from <Picture 2>, etc. — the character swapped into the scene.\n"
+        "- Scene elements not tied to a replaced character are preserved as-is: background, "
+        "lighting, camera, props, and characters that stay.\n"
+        "- Never merge the reference images into one subject unless the user says they're the "
+        "same person. Never use the ref-video's content as a replaced character's identity.\n"
+        "- detailed_description is the main body — 350-500 words, reference labels at first "
+        "appearance, each replacement subject's identity described from ITS reference image."
+    ),
 }
 
 
@@ -414,7 +783,7 @@ class H3PromptEnhancer:
 
     Produces the structured prompt that H3 expects — the community substitute for
     the hosted "H3-Context-IR" prompt-enhancement system. One node handles all
-    H3 task types: a task_type widget (T2V / I2V / FL2V / L2V / R2V) switches
+    H3 task types: a task_type widget (T2V / I2V / FL2V / L2V / R2V / RV2V) switches
     between the 3-field base format and the 6-field full-reference format.
 
     Reuses the OpenRouter API client (_call_openrouter) and Ollama fallback from
@@ -431,11 +800,13 @@ class H3PromptEnhancer:
                                "structured format with camera moves, shots, audio, and music fields."
                 }),
                 "task_type": (
-                    ["t2v", "i2v", "fl2v", "l2v", "r2v"],
+                    ["t2v", "i2v", "fl2v", "l2v", "r2v", "rv2v", "ri2v"],
                     {"default": "t2v",
                      "tooltip": "t2v=text-to-video (no images), i2v=first-frame, "
                                 "fl2v=first+last frame, l2v=last-frame only, "
-                                "r2v=full-reference (6-field output)."}
+                                "r2v=full-reference (6-field output), "
+                                "rv2v=static ref-video = scene, reference images = "
+                                "replacement characters (Bernini RV2V semantics)."}
                 ),
                 "duration": ("FLOAT", {
                     "default": 5.0, "min": 0.5, "max": 120.0, "step": 0.5,
@@ -468,11 +839,20 @@ class H3PromptEnhancer:
                 }),
                 "reference_image_1": ("IMAGE",),
                 "reference_image_2": ("IMAGE",),
+                "images_batch": ("IMAGE", {
+                    "tooltip": "Batch of reference images (e.g. from BatchImagesNode). "
+                               "Each frame becomes a reference image, numbered in order "
+                               "after any wired reference_image_0/1/2. A 6-frame batch "
+                               "with no individual slots wired gives image0..image5. "
+                               "Works in R2V / RV2V / I2V modes."
+                }),
                 "source_video": ("IMAGE", {
                     "tooltip": "Source video as batched frames (e.g. from BerniniLoadVideo). "
                                "Frames are sampled across the timeline and shown to the LLM as "
                                "<Video 1> — the source asset for video editing / video continuation. "
-                               "R2V mode only."
+                               "R2V mode only. For RV2V, wire the static scene ref-video here "
+                               "(e.g. from H3 Image to Ref Video) — the LLM keeps its scene "
+                               "and swaps in the reference-image characters."
                 }),
                 "temperature": ("FLOAT", {
                     "default": 0.7, "min": 0.0, "max": 2.0, "step": 0.05,
@@ -491,7 +871,10 @@ class H3PromptEnhancer:
                 }),
                 "custom_system_prompt": ("STRING", {
                     "default": "", "multiline": True,
-                    "tooltip": "Overrides the built-in H3 system prompt. Leave empty for default."
+                    "tooltip": "APPENDED to the selected built-in H3 system prompt as a "
+                               "patch (e.g. copy/consistency overrides) — the base format "
+                               "and speaker rules are always kept. Leave empty for the built-in "
+                               "prompt alone. For a full replacement, paste the entire prompt."
                 }),
                 "custom_model": ("STRING", {
                     "default": "",
@@ -533,6 +916,16 @@ class H3PromptEnhancer:
                     "tooltip": "Token budget for the auto_describe analysis call. Multi-image "
                                "scenes need 4096+. Lower to 2048 for a single simple image."
                 }),
+                # NOTE: must remain the LAST optional input — saved workflows'
+                # widgets_values arrays append in order, so trailing entries are
+                # safe to miss before this one.
+                "seed": ("INT", {
+                    "default": -1, "min": -1, "max": 2147483647, "step": 1,
+                    "tooltip": "Sampling seed sent to the LLM backend. -1 = fresh random "
+                               "seed every run (new prompt each queue; only works when the "
+                               "provider honours a seed field), 0+ = fixed & reproducible "
+                               "output. Overrides nothing else — temperature still applies."
+                }),
             }
         }
 
@@ -558,6 +951,9 @@ class H3PromptEnhancer:
                         line += f" | Scene: {scene}"
                     if state:
                         line += f" | State: {state}"
+                    lbl = entry.get("speaker_label")
+                    if lbl and str(lbl).strip():
+                        line += f" | Speaker: {lbl}"
                     if line.strip():
                         parts.append(line)
                 return "\n".join(parts) if parts else None
@@ -567,6 +963,9 @@ class H3PromptEnhancer:
                     line += f" | Scene: {parsed['scene']}"
                 if parsed.get("current_state"):
                     line += f" | State: {parsed['current_state']}"
+                lbl = parsed.get("speaker_label")
+                if lbl and str(lbl).strip():
+                    line += f" | Speaker: {lbl}"
                 return line if line.strip() else None
             return None
         except (json.JSONDecodeError, TypeError, AttributeError):
@@ -583,11 +982,14 @@ class H3PromptEnhancer:
             return None
 
     def _analyze_images(self, api_fn, api_key, llm_model, image_parts, roles,
-                        hints, temperature, max_tokens):
+                        hints, temperature, max_tokens, user_prompt="",
+                        seed=-1):
         """First-pass: describe every attached image as structured JSON.
 
-        Returns a formatted text block the write pass uses to anchor identity,
-        or None if the analysis failed."""
+        The caller's raw prompt is passed through (as user notes) so any speaker
+        IDs or naming the user assigned can be bound to the right identities in
+        the images. Returns a formatted text block the write pass uses to anchor
+        identity, or None if the analysis failed."""
         if not image_parts:
             return None
         content = list(image_parts)
@@ -596,7 +998,8 @@ class H3PromptEnhancer:
             image_roles="\n".join(
                 f"- image{i}: {role}" for i, role in enumerate(roles)),
             hints=hints or "(none)",
-            user_prompt="(no notes — infer everything from the images)",
+            user_prompt=user_prompt.strip() or
+                       "(no user notes — infer everything from the images)",
         )
         content.append({"type": "text", "text": text})
         try:
@@ -604,6 +1007,7 @@ class H3PromptEnhancer:
                 api_key, llm_model, H3_ANALYZE_SYSTEM_PROMPT, content,
                 temperature=max(temperature - 0.2, 0.0),
                 max_tokens=max_tokens,
+                seed=seed,
             )
         except Exception as e:
             logging.warning(f"[H3PromptEnhancer] auto_describe analysis failed: {e}")
@@ -613,13 +1017,26 @@ class H3PromptEnhancer:
     def enhance(self, prompt, task_type, duration, model, local_backend="off",
                 source_image=None, last_frame_image=None,
                 reference_image_0=None, reference_image_1=None,
-                reference_image_2=None, source_video=None,
+                reference_image_2=None, images_batch=None, source_video=None,
                 temperature=0.7, max_tokens=4096,
                 custom_system_prompt="", custom_model="", api_key=None,
                 advanced_prompt="on",
                 same_subject=False, style_transfer="off",
-                auto_describe=True, auto_describe_max_tokens=4096):
+                auto_describe=True, auto_describe_max_tokens=4096,
+                seed=-1):
         """Enhance a user prompt into H3 structured format."""
+
+        # ── Auto-detect same subject from the raw prompt ───────────────────
+        # The widget is the hard switch, but users naturally write "all the
+        # reference images are the same person" in the prompt itself. Honor
+        # that phrasing so same-subject merge rules activate without the user
+        # toggling the widget.
+        if same_subject is False and prompt and re.search(
+                r"\b(same subject|same person|all (?:the )?same|one (?:and )?the same)\b",
+                prompt, re.IGNORECASE):
+            same_subject = True
+            logging.info("[H3PromptEnhancer] same_subject auto-detected from "
+                         "prompt phrasing")
 
         # ── Resolve model ─────────────────────────────────────────────────
         llm_model = (custom_model.strip()
@@ -645,11 +1062,11 @@ class H3PromptEnhancer:
 
             def _local_api(api_key, model, system_prompt, user_content,
                            timeout=180, temperature=0.7, max_tokens=4096,
-                           retries=2):
+                           retries=2, seed=None):
                 return _call_ollama_chat(
                     ollama_url, ollama_model, user_content, system_prompt,
                     temperature=temperature, max_tokens=max_tokens,
-                    timeout=timeout)
+                    timeout=timeout, seed=seed)
             api_fn = _local_api
         else:
             api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
@@ -661,17 +1078,33 @@ class H3PromptEnhancer:
 
         # ── Select system prompt ──────────────────────────────────────────
         use_adv = advanced_prompt == "on"
-        if custom_system_prompt and custom_system_prompt.strip():
-            system_prompt = custom_system_prompt.strip()
-        elif task_type in H3_BASE_TASK_TYPES:
+        if task_type in H3_BASE_TASK_TYPES:
             system_prompt = (H3_BASE_SYSTEM_PROMPT_ADV if use_adv
                              else H3_BASE_SYSTEM_PROMPT)
+        elif task_type in H3_RV2V_TASK_TYPES:
+            system_prompt = H3_RV2V_SYSTEM_PROMPT_ADV.format(
+                subject_semantics=(H3_RV2V_SEMANTICS_SAME if same_subject
+                                   else H3_RV2V_SEMANTICS_SEPARATE),
+                subject_defs=(H3_RV2V_DEFS_SAME if same_subject
+                              else H3_RV2V_DEFS_SEPARATE),
+                subject_retention=(H3_RV2V_RETENTION_SAME if same_subject
+                                   else H3_RV2V_RETENTION_SEPARATE),
+                subject_rules=(H3_RV2V_RULES_SAME if same_subject
+                               else H3_RV2V_RULES_SEPARATE),
+            )
         else:
             system_prompt = (H3_REF_SYSTEM_PROMPT_ADV if use_adv
                              else H3_REF_SYSTEM_PROMPT)
 
+        # custom_system_prompt APPENDS to the built-in prompt as a patch
+        # (copy/consistency overrides), so the base format + speaker rules are
+        # never lost. For a true full replacement, write the entire prompt here.
+        if custom_system_prompt and custom_system_prompt.strip():
+            system_prompt = (system_prompt + "\n\n" +
+                             custom_system_prompt.strip())
+
         # Local models need explicit NSFW permission
-        if use_local and not (custom_system_prompt and custom_system_prompt.strip()):
+        if use_local:
             system_prompt = (LOCAL_NSFW_PERMISSION + " " +
                              JOYCAPTION_STYLE_PROMPT + " " +
                              system_prompt)
@@ -696,9 +1129,12 @@ class H3PromptEnhancer:
             ref_section += ("A reference image (Picture 1) is attached. "
                             f"It shows the {frame_word} of the video.\n\n")
 
-        # Source video (R2V video editing/continuation) — sampled frames shown
+        # Source video — R2V video editing/continuation: sampled frames shown
         # as <Video 1>. Per the official guide, <Video N> is reserved for
         # whole-video relationships (editing, continuation, camera/cut structure).
+        # RV2V: source_video is a STATIC SCENE reference (a repeated image,
+        # e.g. from H3 Image to Ref Video) — same <Video 1> label, but the LLM is
+        # told it defines identity ONLY, never editing/continuation.
         if source_video is not None and task_type == "r2v":
             if source_video.dim() == 4:
                 n_frames = source_video.shape[0]
@@ -721,6 +1157,60 @@ class H3PromptEnhancer:
                 "for the target video. If the user asks to edit or continue it, use task "
                 "type [video editing] or [video continuation] and begin the summary with: "
                 "The target video is an edited version of <Video 1>.\n\n")
+        elif source_video is not None and task_type == "ri2v":
+            if source_video.dim() == 4:
+                n_frames = source_video.shape[0]
+                n_sample = min(n_frames, 6)
+                idxs = sorted({int(round(i * (n_frames - 1) / (n_sample - 1)))
+                               for i in range(n_sample)}) if n_frames > 1 else [0]
+            else:
+                n_frames, idxs = 1, [0]
+            for i in idxs:
+                frame = source_video[i] if source_video.dim() == 4 else source_video
+                user_content.append({
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64," + _tensor_to_base64(frame)}
+                })
+                role_list.append(
+                    f"frame {i + 1}/{len(idxs)} of the SOURCE video (<Video 1>) — scene and structure")
+            ref_section += (
+                f"A source video (<Video 1>) is attached as {len(idxs)} frames "
+                f"sampled across its {n_frames}-frame timeline. <Video 1> supplies the "
+                "target video's scene, framing, lighting, camera, timing, body positions, "
+                "and structure — all preserved. The character being replaced appears IN "
+                "<Video 1>, but do NOT define that original character as its own subject; "
+                "describe it only as the person being replaced inside <Video 1>'s "
+                "definition. In retention_analysis mark <Video 1> partially_preserved "
+                "(scene/structure kept, replaced character fully replaced).\n\n")
+        elif source_video is not None and task_type == "rv2v":
+            if source_video.dim() == 4:
+                n_frames = source_video.shape[0]
+                n_sample = min(n_frames, 6)
+                idxs = sorted({int(round(i * (n_frames - 1) / (n_sample - 1)))
+                               for i in range(n_sample)}) if n_frames > 1 else [0]
+            else:
+                n_frames, idxs = 1, [0]
+            for i in idxs:
+                frame = source_video[i] if source_video.dim() == 4 else source_video
+                user_content.append({
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64," + _tensor_to_base64(frame)}
+                })
+                role_list.append(
+                    f"frame {i + 1}/{len(idxs)} of the STATIC SCENE reference (<Video 1>)")
+            ref_section += (
+                f"A static reference video (<Video 1>) is attached as {len(idxs)} frames "
+                f"sampled across its {n_frames}-frame timeline. ALL frames show the SAME "
+                "fixed shot — it is a single scene frame repeated as a short clip. <Video 1> "
+                "supplies the target video's scene, framing, lighting, camera, timing, body "
+                "positions, and structure — all preserved. The character being replaced "
+                "appears IN <Video 1>, but do NOT define that original character as its own "
+                "subject; describe it only as the person being replaced inside <Video 1>'s "
+                "definition (e.g. \"the woman in <Video 1>, fully replaced\"). In "
+                "retention_analysis mark <Video 1> as partially_preserved (scene/structure "
+                "kept, replaced character swapped out). Mark the REPLACEMENT character(s) "
+                "from the reference images as attribute_transfer — transfer face, body, hair, "
+                "skin tone, clothing from the reference.\n\n")
 
         # Last-frame image (FL2V only)
         if last_frame_image is not None and task_type == "fl2v":
@@ -741,11 +1231,27 @@ class H3PromptEnhancer:
         # <Subject N> replacement characters whose appearance must drive the
         # integrated_multimodal_description (note: the i2v gen node has no ref_image
         # conditioning — only the prompt text reaches the model).
-        if task_type in ("r2v", "i2v"):
+        if task_type in ("r2v", "rv2v", "i2v", "ri2v"):
             ref_images = []
+            # RI2V scene-as-image: source_image becomes the scene (<Picture 1>),
+            # prepended before character ref images so numbering aligns with
+            # the H3RefToVid node (where the same image wires to ref_image_0).
+            if (task_type == "ri2v" and source_image is not None
+                    and source_video is None):
+                scene_img = (source_image[0] if source_image.dim() == 4
+                             else source_image)
+                ref_images.append(scene_img)
             for ref in (reference_image_0, reference_image_1, reference_image_2):
                 if ref is not None:
                     ref_images.append(ref)
+            # Batch input: each frame becomes a numbered reference image,
+            # continuing after any individually-wired slots.
+            if images_batch is not None:
+                if images_batch.dim() == 4:
+                    for f in images_batch:
+                        ref_images.append(f)
+                else:
+                    ref_images.append(images_batch)
             for i, ref_img in enumerate(ref_images):
                 if ref_img.dim() == 4:
                     b64 = _tensor_to_base64(ref_img[0])
@@ -766,6 +1272,113 @@ class H3PromptEnhancer:
                         "drive all of its actions from the user's request. The first "
                         "frame anchor (Picture 1) shows the ORIGINAL character being "
                         "replaced.\n")
+                elif task_type == "rv2v":
+                    if same_subject:
+                        # All ref images are ONE person (multiple views: face,
+                        # body, details). <Picture 1> is the primary view; the
+                        # rest are additional views feeding the SAME <Subject 1>.
+                        if i == 0:
+                            role_list.append(
+                                f"reference image <Picture {i + 1}> defining <Subject 1> "
+                                "(the ONE unified person; other images are extra views)")
+                            ref_section += (
+                                f"Reference image <Picture {i + 1}> is attached and defines "
+                                "<Subject 1> — the SINGLE unified person who replaces the "
+                                "original character. Describe <Subject 1>'s full appearance "
+                                f"from <Picture {i + 1}>: face shape, eyes, hair color/style, "
+                                "body type, skin tone, clothing, and distinguishing marks. "
+                                "Subsequent reference images are ADDITIONAL VIEWS of this "
+                                "SAME person — merge their features into <Subject 1>, never "
+                                "create new subjects. In retention_analysis mark <Subject 1> "
+                                "and EVERY <Picture N> as attribute_transfer (strong identity "
+                                "sources; never weak_reference).\n")
+                        else:
+                            role_list.append(
+                                f"reference image <Picture {i + 1}> (additional view of "
+                                "<Subject 1> — same person, different angle/detail)")
+                            ref_section += (
+                                f"Reference image <Picture {i + 1}> is an ADDITIONAL VIEW of "
+                                "the SAME <Subject 1> (the same person as <Picture 1> — this "
+                                "shot shows another angle / body detail / outfit of the ONE "
+                                "unified subject). Merge its features into <Subject 1>'s "
+                                "definition: add anything new this view reveals (body detail, "
+                                "tattoos, build, hair back-view, etc.). Do NOT create a new "
+                                "subject.\n")
+                    else:
+                        role_list.append(
+                            f"reference image <Picture {i + 1}> defining <Subject {i + 1}> "
+                            "(REPLACEMENT character into <Video 1>'s scene)")
+                        ref_section += (
+                            f"Reference image <Picture {i + 1}> is attached and defines "
+                            f"<Subject {i + 1}> — the REPLACEMENT character to swap into "
+                            f"<Video 1>'s scene. Describe <Subject {i + 1}>'s full "
+                            f"appearance from <Picture {i + 1}>: face shape, eyes, hair "
+                            "color/style, body type, skin tone, clothing, and distinguishing "
+                            "marks. In retention_analysis mark <Subject "
+                            f"{i + 1}> AND <Picture {i + 1}> as attribute_transfer (strong "
+                            "identity source; never weak_reference). The scene, "
+                            "framing, lighting, and camera come from <Video 1>.\n")
+                elif task_type == "ri2v":
+                    ri2v_scene_as_image = (source_video is None
+                                           and source_image is not None)
+                    if ri2v_scene_as_image and i == 0:
+                        role_list.append(
+                            f"reference image <Picture {i + 1}> — SCENE "
+                            "(environment, framing, lighting)")
+                        ref_section += (
+                            f"Reference image <Picture {i + 1}> provides the SCENE — "
+                            "the environment, setting, framing, lighting, and "
+                            "composition for the target video. Define it as a "
+                            "scene/environment in subject_definitions (e.g. "
+                            f"'<Subject N> is the setting in <Picture {i + 1}>, "
+                            "with...'). In retention_analysis mark it as "
+                            "fully_preserved (scene preserved). Do NOT derive "
+                            "any character's identity from this image.\n")
+                    elif same_subject:
+                        is_primary = ((not ri2v_scene_as_image and i == 0)
+                                      or (ri2v_scene_as_image and i == 1))
+                        scene_label = ("<Picture 1>'s" if ri2v_scene_as_image
+                                       else "<Video 1>'s")
+                        if is_primary:
+                            role_list.append(
+                                f"reference image <Picture {i + 1}> defining the REPLACEMENT "
+                                "character's full appearance (primary view)")
+                            ref_section += (
+                                f"Reference image <Picture {i + 1}> is attached and defines "
+                                "the REPLACEMENT character (<Subject 1>) who appears in "
+                                f"{scene_label} scene. Describe <Subject 1>'s full appearance "
+                                f"from <Picture {i + 1}>: face shape, eyes, hair color/style, "
+                                "body type, skin tone, clothing, and distinguishing marks. "
+                                "Subsequent reference images are ADDITIONAL VIEWS of this "
+                                "SAME person — merge their features into <Subject 1>, never "
+                                "create new subjects. In retention_analysis mark <Subject 1> "
+                                "and EVERY <Picture N> as attribute_transfer (strong identity "
+                                "sources; never weak_reference).\n")
+                        else:
+                            role_list.append(
+                                f"reference image <Picture {i + 1}> (additional view of "
+                                "<Subject 1> — same person, different angle/detail)")
+                            ref_section += (
+                                f"Reference image <Picture {i + 1}> is an ADDITIONAL VIEW of "
+                                "the SAME <Subject 1>. Merge any new details this view "
+                                "reveals (body, tattoos, build, back-view, outfit details) "
+                                "into <Subject 1>'s definition. Do NOT create a new subject.\n")
+                    else:
+                        subj_n = i + 1 if not ri2v_scene_as_image else i
+                        scene_label = ("<Picture 1>'s" if ri2v_scene_as_image
+                                       else "<Video 1>'s")
+                        role_list.append(
+                            f"reference image <Picture {i + 1}> defining the REPLACEMENT "
+                            "character's full appearance")
+                        ref_section += (
+                            f"Reference image <Picture {i + 1}> is attached and defines the "
+                            f"REPLACEMENT character (<Subject {subj_n}>) who appears in "
+                            f"{scene_label} scene. Describe <Subject {subj_n}>'s full appearance "
+                            f"from <Picture {i + 1}>: face shape, eyes, hair color/style, "
+                            "body type, skin tone, clothing, and distinguishing marks. In "
+                            f"retention_analysis mark <Subject {subj_n}> AND <Picture {i + 1}> "
+                            "as attribute_transfer (strong identity source; never "
+                            "weak_reference).\n")
                 else:
                     role_list.append(
                         f"reference image (label as Picture {i + 1} or Subject {i + 1})")
@@ -779,10 +1392,28 @@ class H3PromptEnhancer:
         # of one person into a single subject and/or renders the reference in a
         # non-photorealistic art style (Bernini-style controls).
         extra_rules = []
-        has_refs = any(r is not None for r in
-                       (reference_image_0, reference_image_1, reference_image_2))
+        has_refs = (any(r is not None for r in
+                        (reference_image_0, reference_image_1, reference_image_2))
+                    or images_batch is not None)
+        # RV2V: static ref-video = scene, ref images = replacement characters.
+        # Scene video and images are DIFFERENT roles. BUT when same_subject is
+        # ON, the user is saying all ref images are ONE person (multiple views
+        # of a single character) — that intent wins over the per-image rule.
+        ri2v_scene_mode = (task_type in H3_RI2V_TASK_TYPES
+                           and source_video is None
+                           and source_image is not None and has_refs)
         if same_subject and has_refs:
-            extra_rules.append(H3_SAME_SUBJECT_RULE)
+            if ri2v_scene_mode:
+                extra_rules.append(H3_SAME_SUBJECT_RULE_SCENE_IMAGE)
+            else:
+                extra_rules.append(H3_SAME_SUBJECT_RULE)
+        if task_type in H3_RI2V_TASK_TYPES and has_refs and source_video is not None:
+            extra_rules.append(H3_RI2V_RULE)
+        elif ri2v_scene_mode:
+            extra_rules.append(H3_RI2V_RULE_SCENE_IMAGE)
+        elif (task_type in H3_RV2V_TASK_TYPES and has_refs
+              and source_video is not None and not same_subject):
+            extra_rules.append(H3_RV2V_SAME_SUBJECT_RULE)
         if style_transfer and style_transfer != "off":
             rule = H3_STYLE_TRANSFER_RULES.get(style_transfer)
             if rule:
@@ -798,10 +1429,26 @@ class H3PromptEnhancer:
             image_parts = [c for c in user_content if c.get("type") == "image_url"]
             if image_parts and len(role_list) == len(image_parts):
                 hints = []
+                if ri2v_scene_mode:
+                    hints.append("NOTE: <Picture 1> is the SCENE (setting, framing, "
+                                 "lighting); subsequent reference images are "
+                                 "REPLACEMENT character(s) for that scene.")
                 if same_subject and has_refs:
-                    hints.append("NOTE: ALL reference images show the SAME person "
-                                 "from different angles/poses — analyze as ONE "
-                                 "unified subject, merging features.")
+                    if ri2v_scene_mode:
+                        hints.append("NOTE: ALL character reference images "
+                                     "(<Picture 2> onward) show the SAME person "
+                                     "from different angles/poses/body views — "
+                                     "analyze as ONE unified subject. <Picture 1> "
+                                     "is the SCENE, not a character.")
+                    else:
+                        hints.append("NOTE: ALL reference images show the SAME person "
+                                     "from different angles/poses/body views — analyze "
+                                     "as ONE unified subject, merging features (face, "
+                                     "body, tattoos, build) into a single definition.")
+                elif task_type in H3_RV2V_TASK_TYPES and source_video is not None:
+                    hints.append("NOTE: <Video 1> is the SCENE (setting, framing, "
+                                 "lighting); each reference image is a separate "
+                                 "REPLACEMENT character for that scene.")
                 if style_transfer and style_transfer != "off":
                     hints.append("NOTE: identity features will be translated into a "
                                  "non-photorealistic art style — emphasize "
@@ -811,7 +1458,8 @@ class H3PromptEnhancer:
                 api_k = "" if use_local else api_key
                 analysis = self._analyze_images(
                     caller, api_k, llm_model, image_parts, role_list,
-                    "\n".join(hints), temperature, auto_describe_max_tokens)
+                    "\n".join(hints), temperature, auto_describe_max_tokens,
+                    user_prompt=prompt, seed=seed)
                 if analysis:
                     ref_section += ("--- Context Analysis (image descriptions from "
                                     "the first pass) ---\n"
@@ -827,6 +1475,18 @@ class H3PromptEnhancer:
                 duration_seconds=f"{duration:.1f}",
                 ref_section=ref_section,
                 task_specific_rules=task_rules,
+                user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
+            )
+        elif task_type in H3_RV2V_TASK_TYPES:
+            rv2v_subject_rules = (
+                H3_RV2V_SUBJECT_RULES_SAME if same_subject
+                else H3_RV2V_SUBJECT_RULES_SEPARATE)
+            rv2v_template = (H3_RV2V_TEMPLATE_SAME_SUBJECT if same_subject
+                             else H3_RV2V_TEMPLATE)
+            user_text = rv2v_template.format(
+                duration_seconds=f"{duration:.1f}",
+                ref_section=ref_section,
+                subject_mode_rules=rv2v_subject_rules,
                 user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
             )
         else:
@@ -845,6 +1505,7 @@ class H3PromptEnhancer:
             [{"type": "text", "text": user_text}] if not user_content else
             user_content + [{"type": "text", "text": user_text}],
             temperature=temperature, max_tokens=max_tokens,
+            seed=seed,
         )
 
         # Clean up Ollama VRAM
