@@ -32,8 +32,8 @@ from comfy_api.latest import io
 
 _NODE_ID = "H3BatchImages"
 
-def detect_and_crop_black_bars(image, threshold=0.10, min_crop_pct=0.05,
-                               var_threshold=0.02):
+def detect_and_crop_black_bars(image, threshold=0.15, min_crop_pct=0.05,
+                               var_threshold=0.06):
     """Detect and remove letterbox/pillarbox bars from a [1,H,W,C] frame.
 
     A row/column is a bar only if BOTH its mean brightness is below
@@ -42,7 +42,10 @@ def detect_and_crop_black_bars(image, threshold=0.10, min_crop_pct=0.05,
     dark-but-textured subject edges (shadows, vignettes), which have high
     std and are never cropped. Scanning stops at the first non-bar row/col
     from each edge. Only crops if the bar band is at least `min_crop_pct`
-    of the dimension (no false-positive crops on small dark regions).
+    of the dimension (no false-positive crops on tiny dark regions).
+    Defaults tuned for real-world compressed bars: threshold 0.15 catches
+    dark-gray bars, var_threshold 0.06 tolerates codec noise, min_crop_pct
+    0.05 keeps the false-positive guard on thin dark edges.
     Evolved from WANAspectRatioResizer.detect_and_crop_black_bars so batched
     reference images are stripped of their own pad lines BEFORE fit+pad —
     the subject fills the frame instead of carrying dead black/gray bars
@@ -185,20 +188,22 @@ class H3BatchImages(io.ComfyNode):
                             "BEFORE fit+pad, so source images with their own pad "
                             "lines contribute clean subject content to the encode."),
                 io.Float.Input(
-                    "black_bar_threshold", default=0.10, min=0.01, max=0.2,
+                    "black_bar_threshold", default=0.15, min=0.01, max=0.3,
                     step=0.01,
                     tooltip="Brightness threshold (0-1) for bar detection. "
                             "Rows/columns with mean brightness below this AND "
                             "near-uniform (std below bar_variance_threshold) "
-                            "are treated as bars. Set low (e.g. 0.02) to only "
-                            "strip pure black bars."),
+                            "are treated as bars. 0.15 catches dark-gray "
+                            "letterbox; raise toward 0.2-0.25 if brighter "
+                            "bars persist."),
                 io.Float.Input(
-                    "bar_variance_threshold", default=0.02, min=0.0, max=0.1,
+                    "bar_variance_threshold", default=0.06, min=0.0, max=0.2,
                     step=0.001,
                     tooltip="Max per-channel std (0-1) for a row/column to "
                             "count as a bar. A bar is near-uniform; dark but "
                             "textured subject edges (shadows, vignettes) have "
-                            "high std and are never cropped."),
+                            "high std and are never cropped. 0.06 tolerates "
+                            "codec noise on real bars."),
             ],
             outputs=[
                 io.Image.Output(),
@@ -215,8 +220,8 @@ class H3BatchImages(io.ComfyNode):
 
     @classmethod
     def execute(cls, images, fit_mode="max", pad_mode="replicate",
-                remove_black_bars="auto", black_bar_threshold=0.10,
-                bar_variance_threshold=0.02):
+                remove_black_bars="auto", black_bar_threshold=0.15,
+                bar_variance_threshold=0.06):
         frames = list(images.values())
         if not frames:
             return io.NodeOutput(None)
