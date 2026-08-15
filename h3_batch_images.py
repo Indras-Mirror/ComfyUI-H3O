@@ -83,6 +83,9 @@ def detect_and_crop_black_bars(image, threshold=0.15, min_crop_pct=0.05,
 
     if top == 0 and bottom == h and left == 0 and right == w:
         return image
+    # Safety: never emit an empty frame (all-black input crops to nothing).
+    if bottom <= top or right <= left:
+        return image
     return image[:, top:bottom, left:right, :]
 
 def _fit_resize(image, target_w, target_h):
@@ -204,6 +207,15 @@ class H3BatchImages(io.ComfyNode):
                             "textured subject edges (shadows, vignettes) have "
                             "high std and are never cropped. 0.06 tolerates "
                             "codec noise on real bars."),
+                io.Float.Input(
+                    "max_long_side", default=2048, min=0, max=16384, step=64,
+                    tooltip="Cap the longest side (px) of the common stack box. "
+                            "When the largest input's longest side exceeds this, "
+                            "the target box is downscaled (aspect kept) so one "
+                            "huge reference doesn't inflate the whole batch into "
+                            "large, slow VAE latents. Community-tested: ~2048px "
+                            "long side / ~1MP keeps fidelity with big speed gains. "
+                            "0 = no cap (fit to the true largest input)."),
             ],
             outputs=[
                 io.Image.Output(),
@@ -221,7 +233,7 @@ class H3BatchImages(io.ComfyNode):
     @classmethod
     def execute(cls, images, fit_mode="max", pad_mode="replicate",
                 remove_black_bars="auto", black_bar_threshold=0.15,
-                bar_variance_threshold=0.06):
+                bar_variance_threshold=0.06, max_long_side=2048):
         frames = list(images.values())
         if not frames:
             return io.NodeOutput(None)
@@ -238,6 +250,15 @@ class H3BatchImages(io.ComfyNode):
         else:
             target_w = max(f.shape[2] for f in frames)
             target_h = max(f.shape[1] for f in frames)
+
+        # longest-side cap: downscale the whole common box (aspect kept) when
+        # the largest input exceeds it, so one huge ref doesn't inflate the
+        # batch into large slow VAE latents. Applies to fit+pad paths; on
+        # 'fill' it also caps the cover scale. 0 = no cap.
+        if max_long_side and max(target_w, target_h) > max_long_side:
+            s = max_long_side / max(target_w, target_h)
+            target_w = max(1, int(round(target_w * s)))
+            target_h = max(1, int(round(target_h * s)))
 
         out = []
         regions = []

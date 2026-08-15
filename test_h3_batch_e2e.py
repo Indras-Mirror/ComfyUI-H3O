@@ -336,6 +336,34 @@ out_black_low = H3BatchImages.execute(
     black_bar_threshold=0.01, bar_variance_threshold=0.02)[0]
 check("black bars still stripped at threshold=0.01", out_black_low.shape == (1, 128, 112, 3), str(tuple(out_black_low.shape)))
 
+# ── 5. max_long_side cap + empty-frame guard ───────────────────────────────
+print("\n== 5. max_long_side cap + empty-frame guard ==")
+
+def _content_frame(h, w):
+    """Textured mid-gray content (std high enough to never look like a bar)."""
+    return (torch.rand(1, h, w, 3) * 0.5 + 0.25).float()
+
+big = _content_frame(1000, 3000)
+cap_out, cap_regs = H3BatchImages.execute(images={"image_0": big})
+check("longest side capped to 2048",
+      cap_out.shape[2] == 2048,
+      str(tuple(cap_out.shape)))
+check("cap preserves aspect ratio",
+      abs(cap_out.shape[1] / cap_out.shape[2] - 1000 / 3000) < 0.01,
+      f"{cap_out.shape[1]}/{cap_out.shape[2]}")
+check("cap region correct",
+      cap_regs[0] == (0, cap_out.shape[1], 0, cap_out.shape[2]),
+      str(cap_regs[0]))
+nocap, _ = H3BatchImages.execute(images={"image_0": big}, max_long_side=0)
+check("max_long_side=0 disables cap",
+      nocap.shape[2] == 3000,
+      str(tuple(nocap.shape)))
+black = torch.zeros(1, 1000, 3000, 3)
+blk, _ = H3BatchImages.execute(images={"image_0": black})
+check("all-black frame kept (non-empty guard)",
+      blk.shape[1] > 0 and blk.shape[2] > 0,
+      str(tuple(blk.shape)))
+
 # ── summary ────────────────────────────────────────────────────────────────
 fails = [r for r in RESULTS if not r[1]]
 print(f"\nSUMMARY: {len(RESULTS) - len(fails)}/{len(RESULTS)} checks passed")
