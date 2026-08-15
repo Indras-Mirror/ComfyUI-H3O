@@ -883,14 +883,16 @@ class H3PromptEnhancer:
                 "api_key": ("STRING", {"default": ""}),
                 # NOTE: new widgets appended LAST so existing saved workflows keep
                 # their widgets_values alignment.
-                "same_subject": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "When ON, tells the LLM that ALL reference images show "
-                               "the SAME person from different angles/poses. The prompt "
-                               "describes ONE unified subject combining features from all "
-                               "references, instead of treating image0/image1/image2 as "
-                               "different people. Turn ON when wiring multiple photos of "
-                               "the same person for better identity coverage."
+                "same_subject": (["auto", "on", "off"], {
+                    "default": "auto",
+                    "tooltip": "Whether ALL reference images show the SAME person from "
+                               "different angles/poses (merged into ONE unified <Subject 1>)\n"
+                               "  auto = honor the old boolean switch AND the raw prompt's "
+                               "phrasing ('same subject' / 'same person' in the user text)\n"
+                               "  on   = force same-subject merge scaffold\n"
+                               "  off  = force per-image subjects (each picture anchors its "
+                               "own replacement character). Use to A/B the same-subject "
+                               "scaffold against per-image."
                 }),
                 "style_transfer": (
                     ["off", "anime", "3d_render", "cartoon", "match_source"],
@@ -1021,22 +1023,29 @@ class H3PromptEnhancer:
                 temperature=0.7, max_tokens=4096,
                 custom_system_prompt="", custom_model="", api_key=None,
                 advanced_prompt="on",
-                same_subject=False, style_transfer="off",
+                same_subject="auto", style_transfer="off",
                 auto_describe=True, auto_describe_max_tokens=4096,
                 seed=-1):
         """Enhance a user prompt into H3 structured format."""
 
-        # ── Auto-detect same subject from the raw prompt ───────────────────
-        # The widget is the hard switch, but users naturally write "all the
-        # reference images are the same person" in the prompt itself. Honor
-        # that phrasing so same-subject merge rules activate without the user
-        # toggling the widget.
-        if same_subject is False and prompt and re.search(
-                r"\b(same subject|same person|all (?:the )?same|one (?:and )?the same)\b",
-                prompt, re.IGNORECASE):
+        # ── Resolve same_subject (tri-state) ───────────────────────────────
+        # "on" forces the unified-subject scaffold, "off" forces per-image
+        # subjects, "auto" honors the prompt's phrasing ("same subject" /
+        # "same person" in the raw user text). Backward compatible: the old
+        # boolean True/False still resolves to on/off.
+        if same_subject is True or same_subject == "on":
             same_subject = True
-            logging.info("[H3PromptEnhancer] same_subject auto-detected from "
-                         "prompt phrasing")
+        elif same_subject is False or same_subject == "off":
+            same_subject = False
+        elif same_subject == "auto":
+            if prompt and re.search(
+                    r"\b(same subject|same person|all (?:the )?same|one (?:and )?the same)\b",
+                    prompt, re.IGNORECASE):
+                same_subject = True
+                logging.info("[H3PromptEnhancer] same_subject auto-detected from "
+                             "prompt phrasing")
+            else:
+                same_subject = False
 
         # ── Resolve model ─────────────────────────────────────────────────
         llm_model = (custom_model.strip()

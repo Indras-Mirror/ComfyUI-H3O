@@ -325,11 +325,10 @@ check("plus t2v: ref_images_out is 1x1x1x3 dummy",
       cap7d["ref_images_out"].shape == (1, 1, 1, 3),
       f"shape={cap7d['ref_images_out'].shape}")
 
-# ── 8. same_subject auto-detection from raw prompt phrasing ────────────────
-# The widget is the hard switch, but "all same subject" in the user's prompt
-# must also activate the merge rules.
-print("\nsame_subject auto-detection (widget OFF, prompt says 'all same subject')")
-cap8 = run_enhance(task_type="rv2v", same_subject=False,
+# ── 8. same_subject tri-state (auto/on/off) ───────────────────────────────
+# auto = honor prompt phrasing; on = force unified; off = force per-image.
+print("\nsame_subject='auto' + prompt says 'all same subject'")
+cap8 = run_enhance(task_type="rv2v", same_subject="auto",
                    images_batch=batch, source_video=src_video,
                    prompt_override="Replace the woman with the woman in the "
                                    "reference images (all same subject) including body.")
@@ -344,13 +343,48 @@ check("auto-detect: strong-references mandate present",
 check("auto-detect: mock output still returned",
       cap8["returned_h3_prompt"] == "MOCK OUTPUT")
 
-print("\nsame_subject auto-detect NEGATIVE (no phrase in prompt)")
-cap8b = run_enhance(task_type="rv2v", same_subject=False,
+print("\nsame_subject='auto' with NO phrase in prompt")
+cap8b = run_enhance(task_type="rv2v", same_subject="auto",
                     images_batch=batch, source_video=src_video,
                     prompt_override="A woman walks into the scene.")
-check("no phrase: per-image rules stay (widget off)",
+check("auto no phrase: per-image rules stay",
       "SCENE/REPLACEMENT RULE" in cap8b["user_text"]
       and "SAME SUBJECT:" not in cap8b["user_text"])
+
+print("\nsame_subject='on' — force unified even with unrelated prompt")
+cap8c = run_enhance(task_type="rv2v", same_subject="on",
+                    images_batch=batch, source_video=src_video,
+                    prompt_override="A woman walks into the scene.")
+check("on: merge rule activated despite no phrase",
+      "SAME SUBJECT:" in cap8c["user_text"]
+      and "ONE unified subject" in cap8c["user_text"])
+check("on: no per-image SCENE/REPLACEMENT rule",
+      "SCENE/REPLACEMENT RULE" not in cap8c["user_text"])
+
+print("\nsame_subject='off' — force per-image even with phrase in prompt")
+cap8d = run_enhance(task_type="rv2v", same_subject="off",
+                    images_batch=batch, source_video=src_video,
+                    prompt_override="All three are the same person, I swear.")
+check("off: per-image rules despite phrase",
+      "SCENE/REPLACEMENT RULE" in cap8d["user_text"]
+      and "SAME SUBJECT:" not in cap8d["user_text"])
+
+# Legacy boolean still works: True == on
+print("\nsame_subject=True (legacy boolean) still forces merge")
+cap8e = run_enhance(task_type="rv2v", same_subject=True,
+                    images_batch=batch, source_video=src_video,
+                    prompt_override="A woman walks into the scene.")
+check("legacy True: merge rule activated",
+      "SAME SUBJECT:" in cap8e["user_text"]
+      and "ONE unified subject" in cap8e["user_text"])
+# Legacy False == off
+print("\nsame_subject=False (legacy boolean) forces per-image")
+cap8f = run_enhance(task_type="rv2v", same_subject=False,
+                    images_batch=batch, source_video=src_video,
+                    prompt_override="All same person here.")
+check("legacy False: per-image rules despite phrase",
+      "SCENE/REPLACEMENT RULE" in cap8f["user_text"]
+      and "SAME SUBJECT:" not in cap8f["user_text"])
 
 # ── 9. exact picture-count bound ───────────────────────────────────────────
 # The LLM sometimes fabricates <Picture N> beyond the attached count (e.g.
