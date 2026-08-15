@@ -7,10 +7,20 @@ companion nodes.
 
 - [**H3PromptEnhancer**](#h3promptenhancer) — vision-LLM prompt enhancement
   into MiniMax H3's structured prompt format
+- [**H3PromptEnhancerPlus**](#h3promptenhancerplus) — same, plus
+  `ref_images_out` (images in exact `<Picture N>` order) + `enhanced_rules` toggle
 - [**H3AspectRatioDetector**](#h3aspectratiodetector) — auto-match the
   Resolution Selector canvas to a source image's aspect ratio
 - [**H3RefBoostV**](#h3refboostv) — attention-level reference V-boost +
   source V-damp (the strong identity lever, norm-cancellation-proof)
+- [**H3RefBoostChar**](#h3refboostchar) — slot-targeted latent-level ref boost
+- [**H3RefBudget**](#h3refbudget) — packed-row budget / repeat calculator
+- [**H3ImageToRefVideo**](#h3imagetorefvideo) — 1 image → valid H3 ref-video batch
+- [**H3BatchImages**](#h3batchimages) — no-crop fit+pad stacking with per-frame
+  black/gray bar removal and `content_regions`
+- [**H3ReferenceToVideo (Batch)**](#h3referencetovideo-batch) — official-node
+  sibling adding the `images_batch` + `images_batch_regions` inputs
+- [**H3TAEPreview**](#h3taepreview) — live previews via the H3 TAE (12-ch head)
 
 ---
 
@@ -35,14 +45,20 @@ The output schema switches on the **task_type** widget:
 | `ri2v` | **reference images replace a character in a source video, scene/structure preserved** | 6 fields |
 
 **`ri2v` is the recommended character-swap mode.** It reuses the proven `r2v`
-6-field template and applies the empirically-correct retention recipe that made
-`video_minimax_h3_r2v_H3Prompt_VSR_Mask.json` work: the replacement character is
-`fully_preserved`, each `<Picture N>` face/hair source is `weak_reference`, the
-source `<Video N>` is `partially_preserved` (scene/structure kept, replaced
-character fully replaced), and the original character is **never named as its
-own subject**. This is the opposite of `rv2v`'s two-subject recipe
-(original=`weak_reference`, replacement=`attribute_transfer`), which renders the
-original unchanged.
+6-field template and applies the empirically-correct retention recipe (matching
+the community `minimaxH3Character_v10` workflow): the REPLACEMENT character is
+`attribute_transfer` — face, body, hair, skin tone, clothing and makeup
+transferred from the reference pictures; EVERY `<Picture N>` is also
+`attribute_transfer` (no `weak_reference` — every reference image is a strong
+identity source whose features must reach the render); the source `<Video N>`
+is `partially_preserved` (scene/structure/framing/lighting kept, replaced
+character swapped out); and the original character is **never named as its own
+subject** — it appears only as "the person being replaced" inside `<Video N>`'s
+definition. `same_subject` (or the phrasing "all same subject" / "all same
+person" in the raw prompt, auto-detected) merges every reference image into ONE
+unified `<Subject 1>`; otherwise each picture anchors its own replacement
+character. The node also hard-bounds the valid `<Picture N>` labels to the exact
+count of attached images, so the LLM cannot invent phantom picture labels.
 
 **3-field (base)** format:
 
@@ -229,6 +245,79 @@ Unit-tested (24/24) against the real `PackedLayout` and the real `Attention`
 module (with stubbed GPU kernels), including Sol-Attn-bypass proof.
 **Render-test of the class-level patch pending** (the pre-fix renders did not
 exercise the V-scaling at all).
+
+---
+
+## H3PromptEnhancerPlus
+
+Identical to `H3PromptEnhancer` plus two additions:
+
+- **`ref_images_out`** — passes the reference images through in the exact
+  `<Picture N>` order the prompt uses. Wire it to `H3ReferenceToVideo`'s
+  `images_batch` so the renderer numbers the refs identically to the prompt.
+  Do NOT also wire images into the individual `ref_image_0/1/2` slots — that
+  doubles them up.
+- **`enhanced_rules`** (default on) — injects community dialogue/audio/
+  consistency rules into the system prompt. Toggle off for original behavior
+  (A/B testing).
+
+---
+
+## H3BatchImages + H3ReferenceToVideo (Batch)
+
+`H3BatchImages` stacks any number of reference images into one batch **without
+cropping**: each frame is scaled to fit inside a common box and the short
+dimension is padded (replicate/black/white). `remove_black_bars="auto"` strips
+letterbox/pillarbox bars from each frame first (mean **and** variance guard:
+a row/column is a bar only if it is near-uniform *and* dark — gray bars are
+caught, dark textured edges are not; raise `black_bar_threshold` toward 0.15
+for brighter bars).
+
+`H3ReferenceToVideo (Batch)` is the official node's sibling: same inputs plus
+`images_batch` and `images_batch_regions`.
+
+**Wire the region path** (important — this is what keeps identity strong):
+
+```
+[H3BatchImages] ── IMAGE ────────────────► [H3ReferenceToVideo (Batch) images_batch]
+       └── content_regions (per-frame     └─► images_batch_regions
+           subject box within padding)
+```
+
+Without `images_batch_regions`, the model encodes the *whole padded frame* and
+the subject occupies only a fraction of its latent area — identity gets diluted.
+With it, each ref is cropped back to its native geometry before encoding
+(proven bit-identical to individually-wired refs in the test suite).
+
+---
+
+## H3RefBoostChar
+
+Latent-level, slot-targeted reference boost — the **weak** identity lever
+(amplitude scaling is largely cancelled by RMSNorm). Use `H3RefBoostV` for the
+strong lever; keep `source_noise=0` (high source noise corrupts the scene).
+
+---
+
+## H3RefBudget
+
+Computes packed-row budget / repeat counts for the H3 reference layout —
+useful when fitting many refs into the canvas.
+
+---
+
+## H3ImageToRefVideo
+
+Turns a single image into a valid H3 reference-video batch (frame repeated
+`n` times, `n % 17 == 5`) — the standard way to use a still image as
+`ref_video_0` for the rv2v/ri2v scene-reference path.
+
+---
+
+## H3TAEPreview
+
+Live video previews during sampling using the H3 TAE head (not the core
+Load VAE, which expects the 12-channel head).
 
 ---
 
