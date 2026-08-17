@@ -20,11 +20,15 @@ from .h3o_shared import (
     OLLAMA_DEFAULT_URL,
     LOCAL_NSFW_PERMISSION,
     JOYCAPTION_STYLE_PROMPT,
+    LLAMA_STYLE_PROMPT,
+    OPENROUTER_MODEL_OUTPUT_CAPS,
     _tensor_to_base64,
-    _call_openrouter,
-    _call_ollama_chat,
+    _call_backend,
     _check_ollama,
     _unload_ollama_model,
+    _spawn_llama_server,
+    _kill_llama_server,
+    _resolve_generation_budget,
 )
 
 
@@ -245,6 +249,264 @@ Rules (from official MiniMax H3 writing guides + community refinements):
 Return ONLY the six fields as plain text — no JSON wrapper, no extra commentary."""
 
 
+# ── RI2I (Reference Image → Image / character sheet) system prompts ────────
+# New task type: reference images → ONE character's turnaround reference sheet.
+# The target is a short locked-off 6-shot sequence (front / face / left profile /
+# right profile / back / expression) whose best frames get picked into a sheet
+# image. Reuses the proven 6-field H3 structure so the output drops straight
+# into H3ReferenceToVideo (ref2va) or MiniMaxH3ImageToVideo (i2v anchor).
+H3_RI2I_SYSTEM_PROMPT = """\
+You are a Creative Assistant for MiniMax H3 character-sheet generation.
+Given the user's raw request and reference-image descriptions, write the
+complete 6-field structured prompt that generates a CHARACTER TURNAROUND
+SHEET: one short video of a SINGLE character shown from several locked-off
+angles, whose best frames become the reference sheet.
+
+Output SIX fields in this exact order:
+
+subject_definitions:
+<Subject 1> is ... the ONE character, defined entirely from the reference
+images: face shape, eyes, brows, nose, lips, hair colour/length/style,
+skin tone, body type/build, full clothing inventory (colour, fabric, fit),
+accessories, tattoos, scars, piercings. <Picture N> is ... (each reference
+image — every one is a view of the same character).
+
+summary:
+[reference generation] One short paragraph: the target video is a character
+reference sheet of <Subject 1>, identity locked from the reference images.
+
+retention_analysis:
+One line per reference label. Mark <Subject 1> and EVERY <Picture N> as
+attribute_transfer (strong identity sources; never weak_reference). No
+picture is "not appearing"; every one contributes features to <Subject 1>.
+
+detailed_description:
+The main body, 350-500 words. Style established in 1-2 sentences BEFORE
+[Shot 1]. The sequence is exactly SIX shots joined by hard cuts, all showing
+the SAME character on the same plain seamless neutral grey studio backdrop
+(unless the user specifies another), with a locked-off static camera at eye
+level, the horizon level and centred, no camera movement of any kind:
+[Shot 1] full body facing the camera, generous empty margin on every side so
+the whole figure and anything extending beyond it stays inside the frame (no
+timestamp on Shot 1); [Shot 2] At 00:00.750, the shot cuts to a tight
+close-up of the face; [Shot 3] At 00:01.500, the shot cuts to a left side
+profile of the full figure; [Shot 4] At 00:02.250, the shot cuts to a right
+side profile of the full figure; [Shot 5] At 00:03.000, the shot cuts to a
+rear view of the full figure; [Shot 6] At 00:03.750, the shot cuts to a
+medium close-up of the face and shoulders with a strong expression
+(frightened: eyes wide, brows raised and drawn together, mouth slightly open
+— unless the user asks for another). Every shot: the figure stands still in
+a neutral upright pose with arms relaxed at the sides, mouth closed with a
+neutral expression except the final shot, even neutral lighting from every
+side, no props, no cast shadows, no on-screen text. Clothing, hair, colours,
+proportions and every visible detail remain identical across every shot.
+Cut times assume a 5.0s take (124 frames at 24fps); scale them
+proportionally if the duration differs.
+If the user's request names ONE specific view (e.g. "front view", "left
+profile", "face close-up", "back view") as a single still image, write ONLY
+that one view: [Shot 1] is that view and the sequence ends there — no
+additional shots, no cut timestamps. Everything else (backdrop, lighting,
+identity rules, field structure) stays as specified.
+
+overall_soundscape: 1-4 sentences. Default: a quiet interior studio room
+tone with no other sound. Use N/A only for complete silence.
+
+non_diegetic_music: N/A unless the user asks for music.
+
+Rules:
+- The reference images are the ONLY source of the character's identity;
+  their features must be matched exactly — never invent new identity details.
+- Keep the same <Subject 1> across all sections; never introduce extra
+  subjects, scene changes, or background characters.
+- Reference labels (<Subject 1>, <Picture N>) at first appearance.
+- No dialogue unless the user explicitly requests a spoken line; if one is
+  requested, assign it to <Subject 1> (S1) with <d>[Language] text</d>.
+- Write all sections in English.
+- NSFW content: describe with anatomical precision; do not self-censor.
+
+Return ONLY the six fields as plain text — no JSON wrapper, no extra commentary."""
+
+
+H3_RI2I_SYSTEM_PROMPT_ADV = """\
+You are a Creative Assistant for MiniMax H3 character-sheet generation
+(community H3-Context-IR refinements enabled). Given the user's raw request
+and reference-image descriptions, write the complete 6-field structured
+prompt that generates a CHARACTER TURNAROUND SHEET: one short video of a
+SINGLE character shown from several locked-off angles, whose best frames
+become the reference sheet.
+
+Output SIX fields in this exact order:
+
+subject_definitions:
+One line per label. <Subject 1> is ... the ONE character, defined entirely
+from the reference images — write it as an exhaustive reference-card
+checklist: face shape, eyes (shape + colour), brows, nose, lips, jawline,
+hair (colour, length, style, texture), skin tone, body type/build, height
+impression, full clothing inventory (colour, fabric, fit), accessories,
+tattoos, scars, piercings, distinguishing marks. <Picture N> is ... (each
+reference image — every one is a view of the same character).
+
+summary:
+[reference generation] ONE short paragraph: the target video is a character
+reference sheet of <Subject 1>, identity locked from the reference images.
+
+retention_analysis:
+One line per reference label with relationship marker. Mark <Subject 1> and
+EVERY <Picture N> as attribute_transfer (strong identity sources; never
+weak_reference). No picture is "identity source only" or "not appearing";
+every one contributes face/body/outfit details to <Subject 1>. List which
+shots <Subject 1> appears in (all six).
+
+detailed_description:
+The main body, 350-500 words. Style established in 1-2 sentences BEFORE
+[Shot 1]. The sequence is exactly SIX shots joined by hard cuts, all showing
+the SAME character on the same plain seamless neutral grey studio backdrop
+(unless the user specifies another), with a locked-off static camera at eye
+level, the horizon level and centred, no camera movement of any kind:
+[Shot 1] full body facing the camera, framed with generous empty margin on
+every side so the whole figure and anything extending beyond its body stays
+fully inside the frame at all times (no timestamp on Shot 1); [Shot 2] At
+00:00.750, the shot cuts to a tight close-up of the face, framed from the
+top of the hair to the chin; [Shot 3] At 00:01.500, the shot cuts to a left
+side profile of the full figure with the same framing margin; [Shot 4] At
+00:02.250, the shot cuts to a right side profile of the full figure with the
+same framing margin; [Shot 5] At 00:03.000, the shot cuts to a rear view of
+the full figure with the same framing margin; [Shot 6] At 00:03.750, the
+shot cuts to a medium close-up of the face and shoulders, still facing the
+camera, the expression now frightened: eyes wide and brows raised and drawn
+together, mouth slightly open, the head held still and upright (or whatever
+expression the user asks for). Every shot: the figure stands still in a
+neutral upright pose with arms relaxed at the sides, mouth closed with a
+still neutral expression except the final shot, even neutral lighting from
+every side, no props and no cast shadows, no on-screen text. Clothing, hair,
+colours, proportions and every visible detail remain identical across every
+shot. Cut times assume a 5.0s take (124 frames at 24fps); scale them
+proportionally if the duration differs. The output is a REFERENCE asset:
+prioritize clean, static, well-lit, fully visible views over any cinematic
+flourish.
+If the user's request names ONE specific view (e.g. "front view", "left
+profile", "face close-up", "back view") as a single still image, write ONLY
+that one view: [Shot 1] is that view and the sequence ends there — no
+additional shots, no cut timestamps. Everything else (backdrop, lighting,
+identity rules, field structure) stays as specified.
+
+overall_soundscape: 1-4 sentences in ONE continuous paragraph. Default: a
+quiet interior studio room tone with no other sound. Use N/A only for
+complete silence. Never repeat dialogue here.
+
+non_diegetic_music: N/A unless the user asks for music.
+
+Rules (from official MiniMax H3 writing guides + community refinements):
+- The reference images are the ONLY source of the character's identity;
+  their features must be matched exactly — never invent new identity details.
+- Keep the same <Subject 1> across all sections; never introduce extra
+  subjects, scene changes, or background characters.
+- Reference labels (<Subject 1>, <Picture N>) at first appearance and where
+  roles apply.
+- No dialogue unless the user explicitly requests a spoken line; if one is
+  requested, assign it to <Subject 1> (S1) with <d>[Language] text</d>,
+  identity established outside the tag, dialogue verbatim inside.
+- Write all sections in English.
+- NSFW content: describe with anatomical precision; do not self-censor.
+
+Return ONLY the six fields as plain text — no JSON wrapper, no extra commentary."""
+
+
+# ── RI2I multi-cell mode (one call -> six static cell prompts) ─────────────
+# Single LLM interaction for the whole character sheet: analyze the refs once,
+# write six self-contained single-still prompts (front/face/left/right/back/
+# seductive) returned as JSON. The Plus node splits them into six outputs.
+H3_RI2I_MULTI_SYSTEM_PROMPT = """\
+You are a Creative Assistant for MiniMax H3 character-sheet generation
+(multi-cell mode). Given the user's raw request and reference-image
+descriptions, write SIX separate single-still prompts — one per cell of a
+character reference sheet — for the SAME character shown in the reference
+images.
+
+The six cells, in this exact order:
+1. "front" — full-body front view, facing the camera, generous margin on every
+   side, neutral expression, mouth closed, arms relaxed at the sides
+2. "face" — tight close-up of the face (top of the hair to the chin), facing
+   the camera, neutral expression, mouth closed
+3. "left" — left side profile of the full figure, neutral expression, mouth
+   closed
+4. "right" — right side profile of the full figure, neutral expression, mouth
+   closed
+5. "back" — rear view of the full figure, neutral expression, mouth closed
+6. "seductive" — medium close-up of the face and shoulders, soft seductive
+   expression: a slight knowing smile with lips together, eyes half-lidded and
+   gazing directly at the camera — unless the user's notes request a different
+   expression for the last cell
+
+Identity rules (every cell):
+- The character is defined ENTIRELY from the reference images (<Picture 1>,
+  <Picture 2>, ...): face, hair, skin, body, clothing, colours must match them
+  exactly. Merge all views into ONE character; never invent identity details.
+- Every cell: plain seamless neutral grey studio backdrop (unless the user
+  specifies another), even neutral lighting from every side, no props, no cast
+  shadows, no on-screen text; completely static image, no motion, no camera
+  movement, no cuts, no video.
+- Describe the character's identity in each cell prompt from the reference
+  analysis.
+
+Output format — JSON ONLY, no prose, no markdown fences:
+{"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."}, {"view": "left", "prompt": "..."}, {"view": "right", "prompt": "..."}, {"view": "back", "prompt": "..."}, {"view": "seductive", "prompt": "..."}]}
+
+Each "prompt" is a self-contained still-image prompt (150-250 words) that opens
+with "One completely still image." and states that the character from the
+reference pictures appears in that view, followed by the identity details and
+the static requirements. Write all prompts in English.
+NSFW content: describe with anatomical precision; do not self-censor."""
+
+
+H3_RI2I_MULTI_SYSTEM_PROMPT_ADV = """\
+You are a Creative Assistant for MiniMax H3 character-sheet generation
+(multi-cell mode, community H3-Context-IR refinements enabled). Given the
+user's raw request and reference-image descriptions, write SIX separate
+single-still prompts — one per cell of a character reference sheet — for the
+SAME character shown in the reference images.
+
+The six cells, in this exact order:
+1. "front" — full-body front view, facing the camera, framed with generous
+   empty margin on every side so the whole figure and anything extending
+   beyond it stays fully inside the frame, neutral expression, mouth closed,
+   arms relaxed at the sides
+2. "face" — tight close-up of the face (top of the hair to the chin), facing
+   the camera, neutral expression, mouth closed
+3. "left" — left side profile of the full figure, the head turned to show the
+   left profile, neutral expression, mouth closed
+4. "right" — right side profile of the full figure, the head turned to show
+   the right profile, neutral expression, mouth closed
+5. "back" — rear view of the full figure, neutral expression, mouth closed
+6. "seductive" — medium close-up of the face and shoulders, soft seductive
+   expression: a slight knowing smile with lips together, eyes half-lidded and
+   gazing directly at the camera, the head held still and upright — unless the
+   user's notes request a different expression for the last cell
+
+Identity rules (every cell):
+- The character is defined ENTIRELY from the reference images (<Picture 1>,
+  <Picture 2>, ...): face shape, eyes, brows, nose, lips, jawline, hair
+  (colour, length, style), skin tone, body type/build, full clothing
+  inventory, accessories, tattoos, scars, distinguishing marks. Merge all
+  views into ONE character; never invent identity details.
+- Every cell: plain seamless neutral grey studio backdrop (unless the user
+  specifies another), even neutral lighting from every side, no props, no cast
+  shadows, no on-screen text; completely static image, no motion, no camera
+  movement, no cuts, no video. The output is a REFERENCE asset: clean, static,
+  well-lit, fully visible views.
+- Describe the character's identity in each cell prompt from the reference
+  analysis; keep every cell consistent with the same identity checklist.
+
+Output format — JSON ONLY, no prose, no markdown fences:
+{"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."}, {"view": "left", "prompt": "..."}, {"view": "right", "prompt": "..."}, {"view": "back", "prompt": "..."}, {"view": "seductive", "prompt": "..."}]}
+
+Each "prompt" is a self-contained still-image prompt (150-250 words) that opens
+with "One completely still image." and states that the character from the
+reference pictures appears in that view, followed by the identity details and
+the static requirements. Write all prompts in English.
+NSFW content: describe with anatomical precision; do not self-censor."""
+
+
 # ── RV2V subject-mode blocks (injected into H3_RV2V_SYSTEM_PROMPT_ADV) ──────
 # same_subject=False (default): each ref image is its own replacement character.
 # same_subject=True: all ref images are ONE person (multiple views merged into
@@ -452,6 +714,63 @@ Rules for reference mode:
 User's raw request:
 {user_prompt}"""
 
+H3_RI2I_TEMPLATE = """\
+Write the H3 full-reference structured prompt (6 fields) for a CHARACTER TURNAROUND SHEET.
+
+Task type: reference generation (RI2I) — the reference images (<Picture 1>, <Picture 2>, ...)
+all show the SAME single character; the target is a short locked-off 6-shot sequence
+(full-body front, face close-up, left profile, right profile, back, expression) whose best
+frames become the character reference sheet image.
+Video duration: {duration_seconds}s
+
+{ref_section}
+
+Rules for RI2I reference mode:
+- Task type in summary is [reference generation].
+- Merge every reference image into ONE <Subject 1> — never split them into separate people.
+- Always write "<Subject 1> is the person from <Picture N>" — the renderer binds identity
+  through the <Picture N> labels only.
+- Identity must match the reference images exactly: face, hair, skin, body, clothing, colours.
+- Six hard-cut shots with a locked-off static camera at eye level on a plain seamless neutral
+  grey studio backdrop, even lighting, no props, no cast shadows; every visible detail
+  identical across shots. Cut times: 00:00.000, 00:00.750, 00:01.500, 00:02.250, 00:03.000
+  (the last shot runs to the end of the take).
+- detailed_description is the main body — 350-500 words, reference labels at first appearance.
+- If the user's request asks for a single specific view as a still image, write that one
+  shot only (no cut timestamps, no multi-shot sequence).
+
+User's raw request:
+{user_prompt}"""
+
+H3_RI2I_MULTI_TEMPLATE = """\
+Write SIX single-still character-sheet prompts as JSON (multi-cell mode, RI2I).
+
+Task type: reference generation (RI2I multi-cell) — the reference images
+(<Picture 1>, <Picture 2>, ...) all show the SAME single character; write six
+self-contained static-image prompts, one per sheet cell, in the fixed order:
+front, face, left, right, back, seductive. Each prompt describes the same
+character in one view, completely static, on a plain seamless neutral grey
+studio backdrop.
+
+{ref_section}
+
+Rules for RI2I multi-cell mode:
+- Task type in summary is [reference generation].
+- Merge every reference image into ONE character; identity must match the
+  references exactly and stay identical across all six cells.
+- Output JSON only: {{"cells": [{{"view": "front", "prompt": "..."}},
+  {{"view": "face", "prompt": "..."}}, {{"view": "left", "prompt": "..."}},
+  {{"view": "right", "prompt": "..."}}, {{"view": "back", "prompt": "..."}},
+  {{"view": "seductive", "prompt": "..."}}]}} — exactly six entries in this order.
+- Each prompt opens with "One completely still image." and is 150-250 words:
+  the view, the character's identity from the reference analysis, the plain
+  seamless neutral grey studio backdrop, even neutral lighting, no props, no
+  cast shadows, completely static (no motion, no camera movement, no cuts, no
+  video).
+
+User's raw request:
+{user_prompt}"""
+
 H3_RV2V_TEMPLATE = """\
 Write the H3 full-reference structured prompt (6 fields) for a reference-image-as-video
 to video generation (RV2V).
@@ -545,6 +864,8 @@ H3_TASK_LABELS = {
     "r2v": "R2V (full-reference mode with subject/picture/video/audio labels)",
     "rv2v": "RV2V (static reference video = scene, reference images = replacement characters)",
     "ri2v": "RI2V (reference images to video — scene from ref image or source video, character identity from ref images)",
+    "ri2i": "RI2I (reference images → character sheet: 6-shot turnaround of ONE character from the refs, frames become a reference sheet image)",
+    "ri2i_multi": "RI2I MULTI (one call → six static cell prompts for the character sheet: front, face, left, right, back, seductive)",
 }
 
 H3_BASE_TASK_TYPES = {"t2v", "i2v", "fl2v", "l2v"}
@@ -553,6 +874,12 @@ H3_RV2V_TASK_TYPES = {"rv2v"}
 # scene-labeled source video and a replacement-preservation override. It is
 # deliberately NOT in H3_RV2V_TASK_TYPES so it routes through the r2v branch.
 H3_RI2V_TASK_TYPES = {"ri2v"}
+
+# ri2i is a NEW standalone task type (reference images → character sheet /
+# turnaround stills). Deliberately NOT in any other task-type set so it never
+# changes the routing, templates, or rules of existing task types — saved
+# workflows are unaffected (the combo just gains one option).
+H3_RI2I_TASK_TYPES = {"ri2i", "ri2i_multi"}
 
 H3_REF_STRONG_RULE = """\
 REFERENCES ARE STRONG (REQUIRED, character swap): every reference picture is an
@@ -624,6 +951,23 @@ REFERENCES ARE STRONG: every character reference picture feeds the subject's
 identity — mark EVERY character <Picture N> as attribute_transfer, never
 weak_reference. No picture is "identity source only" or "not appearing";
 each contributes its face/body/outfit details to the unified <Subject 1>."""
+
+# RI2I retention recipe — character-sheet identity: every reference picture
+# feeds ONE unified character; the target is a 6-shot turnaround sheet.
+H3_RI2I_RULE = """\
+CHARACTER-SHEET RULE (REQUIRED): ALL reference images show the SAME single
+character — merge every view into ONE <Subject 1>; never split them into
+separate people. Mark <Subject 1> and EVERY <Picture N> as attribute_transfer
+(strong identity sources; never weak_reference). No picture is "identity
+source only" or "not appearing" — each contributes its face/body/outfit
+details to <Subject 1>'s definition. The target video is a 6-shot turnaround
+reference sheet of <Subject 1>: full-body front, face close-up, left profile,
+right profile, back view, and a final expression shot — all locked-off static
+shots of the same character on the same plain backdrop with identical
+clothing and details, no scene changes, no extra characters, no camera
+movement. In summary begin with: [reference generation]. When the user's
+request names ONE view as a single still image, apply this identity rule to
+that single view only — no multi-shot sequence, no cut timestamps."""
 
 # Style transfer — references are a REAL person, but the target video is rendered
 # in a non-photorealistic art style. Instructs the LLM to keep identity-defining
@@ -807,6 +1151,32 @@ H3_TASK_SPECIFIC_RULES = {
         "- detailed_description is the main body — 350-500 words, reference labels at first "
         "appearance, each replacement subject's identity described from ITS reference image."
     ),
+    "ri2i": (
+        "- Full-reference mode with subject_definitions, summary, retention_analysis, "
+        "detailed_description, overall_soundscape, non_diegetic_music.\n"
+        "- The reference images define ONE character; merge them into a single "
+        "<Subject 1> in subject_definitions (reference-card checklist of features).\n"
+        "- detailed_description writes a 6-shot turnaround with hard cuts and locked-off "
+        "static cameras: full body front, face close-up, left profile, right profile, back, "
+        "and a final expression shot — identical clothing and details across every shot, "
+        "plain neutral studio backdrop, no camera movement.\n"
+        "- detailed_description is the main body — 350-500 words, reference labels at first "
+        "appearance. Cut times 00:00.000 / 00:00.750 / 00:01.500 / 00:02.250 / 00:03.000 "
+        "for a 5.0s take.\n"
+        "- If the user's request names one view (e.g. 'front view', 'left profile', 'face "
+        "close-up', 'back view') as a single static image, write ONLY that one view — no "
+        "six-shot sequence, no cut timestamps."
+    ),
+    "ri2i_multi": (
+        "- Multi-cell mode: write six separate single-still prompts as JSON with the fixed "
+        "cell order front / face / left / right / back / seductive.\n"
+        "- Identity comes from the reference images and stays identical across all six "
+        "cells; merge the refs into ONE character.\n"
+        "- Each prompt is self-contained (150-250 words), completely static, on a plain "
+        "neutral grey studio backdrop, no motion, no camera movement.\n"
+        "- Output JSON only: {\"cells\": [{\"view\": \"front\", \"prompt\": \"...\"}, ...]} "
+        "with exactly six entries in the order above."
+    ),
 }
 
 
@@ -836,29 +1206,41 @@ class H3PromptEnhancer:
                                "structured format with camera moves, shots, audio, and music fields."
                 }),
                 "task_type": (
-                    ["t2v", "i2v", "fl2v", "l2v", "r2v", "rv2v", "ri2v"],
+                    ["t2v", "i2v", "fl2v", "l2v", "r2v", "rv2v", "ri2v", "ri2i", "ri2i_multi"],
                     {"default": "t2v",
                      "tooltip": "t2v=text-to-video (no images), i2v=first-frame, "
                                 "fl2v=first+last frame, l2v=last-frame only, "
                                 "r2v=full-reference (6-field output), "
                                 "rv2v=static ref-video = scene, reference images = "
-                                "replacement characters (Bernini RV2V semantics)."}
+                                "replacement characters (Bernini RV2V semantics), "
+                                "ri2v=reference images to video (scene/identity), "
+                                "ri2i=reference images to a character sheet: 6-shot "
+                                "turnaround of ONE character, frames become a "
+                                "reference sheet image, "
+                                "ri2i_multi=one call returns six static cell prompts "
+                                "(front/face/left/right/back/seductive) as JSON — use "
+                                "the Plus node for the six parsed cell outputs."}
                 ),
                 "duration": ("FLOAT", {
                     "default": 5.0, "min": 0.5, "max": 120.0, "step": 0.5,
                     "tooltip": "Target video duration in seconds. Affects shot pacing and cut timing."
                 }),
                 "model": (
-                    ["x-ai/grok-4.3", "x-ai/grok-4-0709",
+                    ["x-ai/grok-4.3", "x-ai/grok-4.6",
                      "deepseek/deepseek-chat-v3-0324",
                      "google/gemini-2.5-flash", "openai/gpt-4o"],
                     {"default": "x-ai/grok-4.3"}
                 ),
                 "local_backend": (
-                    ["off", "ollama/joycaption"],
+                    ["off", "ollama/joycaption",
+                     "llamacpp/qwen3.8-heretic-ara", "llamacpp/muse-glimmer"],
                     {"default": "off",
-                     "tooltip": "Use a LOCAL model via Ollama instead of OpenRouter. "
-                                "JoyCaption Beta One (7.5GB) for vision-capable enhancement."}
+                     "tooltip": "Use a LOCAL model instead of OpenRouter. "
+                                "ollama/joycaption = JoyCaption Beta One via "
+                                "Ollama (7.5GB). llamacpp/* = on-demand llama-server "
+                                "spawn, VRAM freed after each run: "
+                                "qwen3.8-heretic-ara (16.8GB) or muse-glimmer "
+                                "(16.2GB)."}
                 ),
             },
             "optional": {
@@ -954,6 +1336,17 @@ class H3PromptEnhancer:
                     "tooltip": "Token budget for the auto_describe analysis call. Multi-image "
                                "scenes need 4096+. Lower to 2048 for a single simple image."
                 }),
+                "editing_frame": (["on", "off"], {
+                    "default": "on",
+                    "tooltip": "on=inject the CHARACTER-REPLACEMENT EDITING FRAME "
+                               "(the [video editing]/motion-inheritance fold) whenever "
+                               "a plate video + identity refs are present — the target "
+                               "is an edited version of the plate with ONE thing swapped, "
+                               "inheriting its motion/integration/optics. off=suppress "
+                               "that block entirely (job built exactly as before the fold "
+                               "existed). Use to A/B the editing-frame scaffold against "
+                               "the non-frame prompt."
+                }),
                 # NOTE: must remain the LAST optional input — saved workflows'
                 # widgets_values arrays append in order, so trailing entries are
                 # safe to miss before this one.
@@ -963,6 +1356,39 @@ class H3PromptEnhancer:
                                "seed every run (new prompt each queue; only works when the "
                                "provider honours a seed field), 0+ = fixed & reproducible "
                                "output. Overrides nothing else — temperature still applies."
+                }),
+                # NOTE: must remain the LAST optional input — saved workflows'
+                # widgets_values arrays append in order, so trailing entries are
+                # safe to miss before this one.
+                "context_length": ("INT", {
+                    "default": -1, "min": -1, "max": 524288, "step": 1,
+                    "tooltip": "Generation budget + KV context ceiling for BOTH "
+                               "passes on remote (OpenRouter) and llamacpp "
+                               "backends. llamacpp/*: -1 = per-backend wrapper "
+                               "default (qwen3.8-heretic-ara 262144, "
+                               "muse-glimmer 524288); explicit values become "
+                               "the llama-server -c (glimmer: --override-kv + "
+                               "YaRN), clamped to the model max (qwen 262144, "
+                               "glimmer 524288). Remote: per-call max_tokens "
+                               "= max(widget budget, min(context_length, model "
+                               "output cap)) — auto = model cap (16384 "
+                               "conservative). Ollama unaffected."
+                }),
+                # NOTE: must remain the LAST optional input — saved workflows'
+                # widgets_values arrays append in order, so trailing entries are
+                # safe to miss before this one.
+                "chain_conversation": (["off", "on"], {
+                    "default": "off",
+                    "tooltip": "A/B toggle for the two-pass flow. off=the write "
+                               "call is independent of pass 1 (exactly as "
+                               "before, byte-identical payloads). on=pass 2's "
+                               "request carries pass 1's actual conversation "
+                               "(the messages pass 1 sent + its raw assistant "
+                               "reply) as multi-turn history, so the model sees "
+                               "its own analysis. Works for all backends "
+                               "(openrouter / ollama / llamacpp); the Context "
+                               "Analysis text block is kept in the template "
+                               "either way."
                 }),
             }
         }
@@ -1021,13 +1447,18 @@ class H3PromptEnhancer:
 
     def _analyze_images(self, api_fn, api_key, llm_model, image_parts, roles,
                         hints, temperature, max_tokens, user_prompt="",
-                        seed=-1):
+                        seed=-1, return_raw=False):
         """First-pass: describe every attached image as structured JSON.
 
         The caller's raw prompt is passed through (as user notes) so any speaker
         IDs or naming the user assigned can be bound to the right identities in
         the images. Returns a formatted text block the write pass uses to anchor
-        identity, or None if the analysis failed."""
+        identity, or None if the analysis failed.
+
+        With return_raw=True the backend is asked for its raw reply + the exact
+        messages it sent; this returns (formatted_text, raw_content,
+        messages_sent) so the caller can chain pass 1's conversation into the
+        write pass. On failure still returns None (no tuple)."""
         if not image_parts:
             return None
         content = list(image_parts)
@@ -1041,16 +1472,20 @@ class H3PromptEnhancer:
         )
         content.append({"type": "text", "text": text})
         try:
-            raw = api_fn(
+            result = api_fn(
                 api_key, llm_model, H3_ANALYZE_SYSTEM_PROMPT, content,
                 temperature=max(temperature - 0.2, 0.0),
                 max_tokens=max_tokens,
                 seed=seed,
+                return_raw=return_raw,
             )
         except Exception as e:
             logging.warning(f"[H3PromptEnhancer] auto_describe analysis failed: {e}")
             return None
-        return self._format_analysis(raw)
+        if return_raw:
+            parsed, raw_content, messages_sent = result
+            return (self._format_analysis(parsed), raw_content, messages_sent)
+        return self._format_analysis(result)
 
     def enhance(self, prompt, task_type, duration, model, local_backend="off",
                 source_image=None, last_frame_image=None,
@@ -1061,7 +1496,8 @@ class H3PromptEnhancer:
                 advanced_prompt="on",
                 same_subject="auto", style_transfer="off",
                 auto_describe=True, auto_describe_max_tokens=4096,
-                seed=-1):
+                editing_frame="on", seed=-1, context_length=-1,
+                chain_conversation="off"):
         """Enhance a user prompt into H3 structured format."""
 
         # ── Resolve same_subject (tri-state) ───────────────────────────────
@@ -1089,37 +1525,72 @@ class H3PromptEnhancer:
                      else model)
 
         # ── Local backend detection ───────────────────────────────────────
+        # backend: "openrouter" | "ollama" | "llamacpp". For llamacpp the
+        # on-demand spawn happens here (BEFORE pass 1); teardown kills the
+        # server we spawned after the write call returns (see below).
         use_local = local_backend != "off"
+        server_owned = None  # (ownership, pid) for llamacpp teardown
         if use_local:
             defaults = LOCAL_MODEL_DEFAULTS.get(local_backend, {})
-            ollama_url = defaults.get("ollama_url", OLLAMA_DEFAULT_URL)
-            ollama_model = defaults.get("ollama_model", "")
-            if not ollama_model:
+            backend = defaults.get("backend", "ollama")
+            backend_url = (defaults.get("llama_url")
+                           or defaults.get("ollama_url")
+                           or OLLAMA_DEFAULT_URL)
+            backend_model = (defaults.get("llama_model")
+                             or defaults.get("ollama_model", ""))
+            if not backend_model:
                 raise ValueError(
-                    f"No ollama_model for local_backend='{local_backend}'.")
-            logging.info(
-                f"[H3PromptEnhancer] Ollama backend: {local_backend} "
-                f"model={ollama_model} url={ollama_url}")
-            if not _check_ollama(ollama_url):
-                raise RuntimeError(
-                    f"Ollama not reachable at {ollama_url}. "
-                    "Start it with: systemctl start ollama")
-
-            def _local_api(api_key, model, system_prompt, user_content,
-                           timeout=180, temperature=0.7, max_tokens=4096,
-                           retries=2, seed=None):
-                return _call_ollama_chat(
-                    ollama_url, ollama_model, user_content, system_prompt,
-                    temperature=temperature, max_tokens=max_tokens,
-                    timeout=timeout, seed=seed)
-            api_fn = _local_api
+                    f"No model for local_backend='{local_backend}'.")
+            if backend == "llamacpp":
+                ownership, server_pid = _spawn_llama_server(
+                    defaults, context_length=context_length)
+                server_owned = (ownership, server_pid)
+                logging.info(
+                    f"[H3PromptEnhancer] llama.cpp backend: {local_backend} "
+                    f"model={backend_model} url={backend_url} "
+                    f"ctx={context_length} ({ownership})")
+            else:
+                logging.info(
+                    f"[H3PromptEnhancer] Ollama backend: {local_backend} "
+                    f"model={backend_model} url={backend_url}")
+                if not _check_ollama(backend_url):
+                    raise RuntimeError(
+                        f"Ollama not reachable at {backend_url}. "
+                        "Start it with: systemctl start ollama")
         else:
+            backend = "openrouter"
+            backend_url = None
+            backend_model = llm_model
             api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
             if not api_key:
                 raise ValueError(
                     "No API key provided. Set OPENROUTER_API_KEY env var "
                     "or connect a key to the api_key input.")
-            api_fn = None  # _call_openrouter is used directly
+
+        # Single dispatch seam — every backend (remote + local) routes through
+        # _call_backend so tests monkeypatch ONE symbol.
+        def _api_call(_api_key, _model, system_prompt_, user_content_, **kw):
+            if backend == "openrouter":
+                return _call_backend(
+                    backend, backend_url, llm_model, system_prompt_,
+                    user_content_, api_key=api_key, **kw)
+            return _call_backend(
+                backend, backend_url, backend_model, system_prompt_,
+                user_content_, **kw)
+
+        # ── Generation budget ceiling (refinement #2) ─────────────────────
+        # context_length is the CEILING for BOTH passes on remote (OpenRouter)
+        # and llamacpp backends: per-call max_tokens = max(existing widget
+        # budget, min(context_length, model output cap)). This fixes remote
+        # truncation (grok etc. were capped at 4096) without breaking saved
+        # workflows — the widget budgets stay as floors. Ollama is untouched.
+        if backend == "llamacpp":
+            gen_ceiling = _resolve_generation_budget(context_length, 16384)
+        elif backend == "openrouter":
+            model_cap = OPENROUTER_MODEL_OUTPUT_CAPS.get(llm_model, 16384)
+            gen_ceiling = _resolve_generation_budget(context_length, model_cap)
+        else:
+            gen_ceiling = None  # ollama: byte-identical behavior
 
         # ── Select system prompt ──────────────────────────────────────────
         use_adv = advanced_prompt == "on"
@@ -1137,6 +1608,12 @@ class H3PromptEnhancer:
                 subject_rules=(H3_RV2V_RULES_SAME if same_subject
                                else H3_RV2V_RULES_SEPARATE),
             )
+        elif task_type == "ri2i_multi":
+            system_prompt = (H3_RI2I_MULTI_SYSTEM_PROMPT_ADV if use_adv
+                             else H3_RI2I_MULTI_SYSTEM_PROMPT)
+        elif task_type in H3_RI2I_TASK_TYPES:
+            system_prompt = (H3_RI2I_SYSTEM_PROMPT_ADV if use_adv
+                             else H3_RI2I_SYSTEM_PROMPT)
         else:
             system_prompt = (H3_REF_SYSTEM_PROMPT_ADV if use_adv
                              else H3_REF_SYSTEM_PROMPT)
@@ -1148,10 +1625,18 @@ class H3PromptEnhancer:
             system_prompt = (system_prompt + "\n\n" +
                              custom_system_prompt.strip())
 
-        # Local models need explicit NSFW permission
+        # Local models need explicit NSFW permission. The style prefix is
+        # model-aware: JoyCaption (Ollama) is caption-trained and needs the
+        # caption-breaking style prompt; the llama.cpp fleet models
+        # (Qwen3.8 heretic-ara / Muse-Glimmer) are H3-format writers — the
+        # JoyCaption prompt does not apply to them, so use the brief
+        # LLAMA_STYLE_PROMPT instead.
         if use_local:
+            style_prompt = (JOYCAPTION_STYLE_PROMPT
+                            if backend == "ollama"
+                            else LLAMA_STYLE_PROMPT)
             system_prompt = (LOCAL_NSFW_PERMISSION + " " +
-                             JOYCAPTION_STYLE_PROMPT + " " +
+                             style_prompt + " " +
                              system_prompt)
 
         # ── Build vision content (images sent to the LLM) ─────────────────
@@ -1276,7 +1761,7 @@ class H3PromptEnhancer:
         # <Subject N> replacement characters whose appearance must drive the
         # integrated_multimodal_description (note: the i2v gen node has no ref_image
         # conditioning — only the prompt text reaches the model).
-        if task_type in ("r2v", "rv2v", "i2v", "ri2v"):
+        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi"):
             ref_images = []
             # RI2V scene-as-image: source_image becomes the scene (<Picture 1>),
             # prepended before character ref images so numbering aligns with
@@ -1424,6 +1909,31 @@ class H3PromptEnhancer:
                             f"retention_analysis mark <Subject {subj_n}> AND <Picture {i + 1}> "
                             "as attribute_transfer (strong identity source; never "
                             "weak_reference).\n")
+                elif task_type in ("ri2i", "ri2i_multi"):
+                    if same_subject or i == 0:
+                        role_list.append(
+                            f"reference image <Picture {i + 1}> defining the character's "
+                            "full appearance (identity source for the turnaround sheet)")
+                        ref_section += (
+                            f"Reference image <Picture {i + 1}> is attached and defines "
+                            "the character whose reference sheet is being created. "
+                            "Describe the character's full appearance from this image: "
+                            "face shape, eyes, hair color/style, body type, skin tone, "
+                            "clothing, and distinguishing marks. Subsequent reference "
+                            "images are ADDITIONAL VIEWS of this SAME person — merge "
+                            "their features into <Subject 1>, never create new subjects. "
+                            "In retention_analysis mark <Subject 1> and EVERY <Picture N> "
+                            "as attribute_transfer (strong identity sources; never "
+                            "weak_reference).\n")
+                    else:
+                        role_list.append(
+                            f"reference image <Picture {i + 1}> (additional view of the "
+                            "character — same person, different angle/detail)")
+                        ref_section += (
+                            f"Reference image <Picture {i + 1}> is an ADDITIONAL VIEW of "
+                            "the SAME character. Merge any new details this view reveals "
+                            "(body, tattoos, build, back-view, outfit details) into "
+                            "<Subject 1>'s definition. Do NOT create a new subject.\n")
                 else:
                     role_list.append(
                         f"reference image (label as Picture {i + 1} or Subject {i + 1})")
@@ -1466,6 +1976,8 @@ class H3PromptEnhancer:
                 extra_rules.append(H3_SAME_SUBJECT_RULE_SCENE_IMAGE)
             else:
                 extra_rules.append(H3_SAME_SUBJECT_RULE)
+        if task_type in H3_RI2I_TASK_TYPES and has_refs:
+            extra_rules.append(H3_RI2I_RULE)
         if task_type in H3_RI2V_TASK_TYPES and has_refs and source_video is not None:
             extra_rules.append(H3_RI2V_RULE)
         elif ri2v_scene_mode:
@@ -1476,8 +1988,9 @@ class H3PromptEnhancer:
         # Character-replacement editing frame: applies to ANY job with a plate
         # video (<Video 1> from source video or H3ImageToRefVideo) + identity
         # reference images — rv2v AND ri2v. Frames the target as an edited
-        # version of the plate with only the character swapped.
-        if source_video is not None and has_refs:
+        # version of the plate with only the character swapped. Toggleable so
+        # the A/B is the same job run twice with the widget flipped.
+        if source_video is not None and has_refs and editing_frame != "off":
             extra_rules.append(H3_REF_EDITING_FRAME)
         if style_transfer and style_transfer != "off":
             rule = H3_STYLE_TRANSFER_RULES.get(style_transfer)
@@ -1490,6 +2003,9 @@ class H3PromptEnhancer:
         # The analysis LLM describes every attached image as JSON; the result
         # is injected into the ref section so the write pass anchors identity
         # from explicit features instead of a fresh look at the images.
+        # pass1_history = (raw assistant reply, messages sent) captured for
+        # chain_conversation="on"; stays None when pass 1 never runs.
+        pass1_history = None
         if auto_describe and user_content:
             image_parts = [c for c in user_content if c.get("type") == "image_url"]
             if image_parts and len(role_list) == len(image_parts):
@@ -1510,6 +2026,11 @@ class H3PromptEnhancer:
                                      "from different angles/poses/body views — analyze "
                                      "as ONE unified subject, merging features (face, "
                                      "body, tattoos, build) into a single definition.")
+                elif task_type in H3_RI2I_TASK_TYPES and has_refs:
+                    hints.append("NOTE: ALL reference images show the SAME character "
+                                 "whose turnaround reference sheet is being created — "
+                                 "analyze as ONE unified subject and describe identity "
+                                 "features exhaustively; the sheet is a reference card.")
                 elif task_type in H3_RV2V_TASK_TYPES and source_video is not None:
                     hints.append("NOTE: <Video 1> is the SCENE (setting, framing, "
                                  "lighting); each reference image is a separate "
@@ -1519,12 +2040,21 @@ class H3PromptEnhancer:
                                  "non-photorealistic art style — emphasize "
                                  "style-independent identity features (face shape, "
                                  "hair, eye color, distinguishing marks).")
-                caller = api_fn if use_local else _call_openrouter
+                caller = _api_call
                 api_k = "" if use_local else api_key
-                analysis = self._analyze_images(
+                analyze_budget = (max(auto_describe_max_tokens, gen_ceiling)
+                                  if gen_ceiling else auto_describe_max_tokens)
+                chain = chain_conversation == "on"
+                result = self._analyze_images(
                     caller, api_k, llm_model, image_parts, role_list,
-                    "\n".join(hints), temperature, auto_describe_max_tokens,
-                    user_prompt=prompt, seed=seed)
+                    "\n".join(hints), temperature, analyze_budget,
+                    user_prompt=prompt, seed=seed, return_raw=chain)
+                if chain and isinstance(result, tuple):
+                    analysis, pass1_raw, pass1_messages = result
+                    if pass1_raw is not None and pass1_messages:
+                        pass1_history = (pass1_raw, pass1_messages)
+                else:
+                    analysis = result
                 if analysis:
                     ref_section += ("--- Context Analysis (image descriptions from "
                                     "the first pass) ---\n"
@@ -1554,6 +2084,18 @@ class H3PromptEnhancer:
                 subject_mode_rules=rv2v_subject_rules,
                 user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
             )
+        elif task_type == "ri2i_multi":
+            user_text = H3_RI2I_MULTI_TEMPLATE.format(
+                duration_seconds=f"{duration:.1f}",
+                ref_section=ref_section,
+                user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
+            )
+        elif task_type in H3_RI2I_TASK_TYPES:
+            user_text = H3_RI2I_TEMPLATE.format(
+                duration_seconds=f"{duration:.1f}",
+                ref_section=ref_section,
+                user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
+            )
         else:
             user_text = H3_REF_TEMPLATE.format(
                 duration_seconds=f"{duration:.1f}",
@@ -1562,20 +2104,42 @@ class H3PromptEnhancer:
             )
 
         # ── Send to LLM ───────────────────────────────────────────────────
-        caller = api_fn if use_local else _call_openrouter
+        caller = _api_call
         api_k = "" if use_local else api_key
+        write_budget = (max(max_tokens, gen_ceiling)
+                        if gen_ceiling else max_tokens)
 
-        raw_output = caller(
-            api_k, llm_model, system_prompt,
-            [{"type": "text", "text": user_text}] if not user_content else
-            user_content + [{"type": "text", "text": user_text}],
-            temperature=temperature, max_tokens=max_tokens,
-            seed=seed,
-        )
+        # Chain mode: the write request carries pass 1's conversation as
+        # history — [write system] + pass1_messages + [assistant raw reply] +
+        # [write user]. OFF → no history kwarg, payload byte-identical.
+        write_history = None
+        if pass1_history is not None:
+            pass1_raw, pass1_messages = pass1_history
+            write_history = pass1_messages + [
+                {"role": "assistant", "content": pass1_raw}]
+        write_kwargs = {"temperature": temperature,
+                        "max_tokens": write_budget, "seed": seed}
+        if write_history is not None:
+            write_kwargs["history"] = write_history
 
-        # Clean up Ollama VRAM
-        if use_local:
-            _unload_ollama_model(ollama_url, ollama_model)
+        try:
+            raw_output = caller(
+                api_k, llm_model, system_prompt,
+                [{"type": "text", "text": user_text}] if not user_content else
+                user_content + [{"type": "text", "text": user_text}],
+                **write_kwargs,
+            )
+        finally:
+            # Kill a llama-server we spawned — even if the write call raised.
+            # VRAM must be fully freed for diffusion before we return.
+            if (use_local and backend == "llamacpp"
+                    and server_owned and server_owned[0] == "spawned"):
+                _kill_llama_server(server_owned[1])
+
+        # Clean up Ollama VRAM (fire-and-forget unload; the Ollama service
+        # owns its own lifecycle — kept exactly as before).
+        if use_local and backend == "ollama":
+            _unload_ollama_model(backend_url, backend_model)
 
         # ── Return ────────────────────────────────────────────────────────
         return (raw_output, system_prompt,)

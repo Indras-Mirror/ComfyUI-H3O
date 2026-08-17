@@ -8,10 +8,9 @@ Both paths run through the REAL official execute() internals with a recording
 fake VAE + fake CLIP. ref_blocks / presentation / layout are validated against
 the REAL comfy PackedLayout.
 
-Two data sets:
-  1. synthetic same-size frames (controlled, padding-free)
-  2. the 3 real aliclo PNGs, mixed dims -> H3BatchImages pads them
-     (this is where the batch path can diverge from separate refs)
+H3BatchImages is now WAN-style AUTOMATIC: black bars always stripped, one exact
+megapixels box (dominant aspect x MP, 32px aligned), pad+fit (edge replicate —
+never black) or crop+fit (zero pad). It also emits the `refs` LIST output.
 
 Usage:
     cd /media/mal/Crucible/AI-ART/ComfyUI
@@ -107,10 +106,7 @@ def build_layout(refs):
                         refs=refs, frame_count=None)
 
 def picture_labels(ref_items):
-    """Replicates comfy/text_encoders/minimax.py:153-175 label loop.
-
-    Image refs are labeled <Picture N>, video <Video N>, audio <Audio N>.
-    """
+    """Replicates comfy/text_encoders/minimax.py:153-175 label loop."""
     counters = {"image": 0, "audio": 0, "video": 0}
     labels = []
     for item in ref_items:
@@ -129,6 +125,10 @@ def synthetic_frame(colors):
     for i, c in enumerate(colors):
         x[..., i] = c
     return x.unsqueeze(0)
+
+def _textured(h, w):
+    """Textured content (mean~0.5, std~0.14) — never detected as a bar."""
+    return (torch.rand(1, h, w, 3) * 0.5 + 0.25).float()
 
 # ── 1. controlled: same-size synthetic frames (padding-free) ───────────────
 print("== 1. controlled: same-size synthetic frames (padding-free) ==")
@@ -157,7 +157,7 @@ check("PackedLayout segments + seq_len identical",
       la.segments == lb.segments and la.seq_len == lb.seq_len,
       f"seq A={la.seq_len} B={lb.seq_len}")
 
-# ── 2. batch subclass passthrough: images_batch=None must equal official ───
+# ── 1b. batch subclass passthrough: images_batch=None must equal official ───
 print("\n== 1b. batch subclass passthrough (images_batch=None) ==")
 vae_p, _, refs_p = run(MiniMaxH3ReferenceToVideoBatch, ref_images=dict(refs_src))
 check("passthrough ref_blocks identical to official path",
@@ -165,15 +165,36 @@ check("passthrough ref_blocks identical to official path",
           refs_p[i]["latent_h"] == refs_a[i]["latent_h"] and
           torch.equal(refs_p[i]["latent"], refs_a[i]["latent"]) for i in range(3)))
 
-# ── 3. real aliclo PNGs (mixed dims, real H3BatchImages composition) ───────
+# ── 1c. INPUT_IS_LIST wrapped dict values (executor-style) must not crash ──
+print("\n== 1c. INPUT_IS_LIST wrapped dict values (ref_video_0 etc.) ==")
+# Regression: with INPUT_IS_LIST the executor wraps each autogrow dict value in
+# a 1-element list — {"ref_video_0": [tensor], "ref_image_0": [tensor]}. The
+# batch sibling must unwrap those or the official node crashes on
+# video_frames.shape (the user's ri2v source-video -> ref_video_0 path).
+_video5 = torch.cat([frames[0]] * 5, dim=0)          # 5-frame static ref video
+vae_w2, clip_w2, refs_w2 = run(
+    MiniMaxH3ReferenceToVideoBatch,
+    ref_images={"ref_image_0": [frames[1]]},
+    ref_videos={"ref_video_0": [_video5]})
+check("WRAPPED: image + video refs both accepted (no crash)",
+      len(refs_w2) == 2, f"refs={len(refs_w2)}")
+_w2_types = [r["kind"] for r in refs_w2]
+check("WRAPPED: ref order image then video",
+      _w2_types == ["image", "video"], str(_w2_types))
+check("WRAPPED: video latent uses the 5-frame ref",
+      refs_w2[1]["latent_h"] == 512 // 16
+      and refs_w2[1]["latent_w"] == 512 // 16,
+      str((refs_w2[1]["latent_h"], refs_w2[1]["latent_w"])))
+
+# ── 2. real aliclo PNGs (mixed dims, real H3BatchImages composition) ───────
 print("\n== 2. real aliclo PNGs (mixed dims, real H3BatchImages composition) ==")
 loader = nodes.LoadImage()
 sources = [loader.load_image(f)[0] for f in ("aliclo2.png", "aliclo4.png", "Aliclo3.png")]
 names = ["aliclo2", "aliclo4", "Aliclo3"]
 print(f"  source dims (H,W): {list(zip(names, [(s.shape[1], s.shape[2]) for s in sources]))}")
 refsA_src = {"ref_image_0": sources[0], "ref_image_1": sources[1], "ref_image_2": sources[2]}
-batch = H3BatchImages.execute(images=dict(refsA_src))[0]
-print(f"  H3BatchImages output: {tuple(batch.shape)}  (fit_mode=max, pad=replicate, black-bar auto)")
+batch, regions, refsA_list = H3BatchImages.execute(images=dict(refsA_src))
+print(f"  H3BatchImages output: {tuple(batch.shape)}  (auto: bars stripped, megapixels=1.0 box, pad+fit replicate)")
 
 vae_a, clip_a, refs_a = run(MiniMaxH3ReferenceToVideo, ref_images=dict(refsA_src))
 vae_b, clip_b, refs_b = run(MiniMaxH3ReferenceToVideoBatch, images_batch=batch)
@@ -188,56 +209,44 @@ a_sizes = [c["shape"] for c in vae_a.calls]
 check("Path A per-position content == source order (aliclo2,aliclo4,Aliclo3)",
       a_order, str(a_sizes))
 
-# Path B ordering: per-position encode input must equal _resize(padded frame i, exp_b)
-exp_b = match_scale_dims(batch.shape[2], batch.shape[1])  # all padded frames identical
-exp_input_b = [_resize(batch[i:i + 1], *exp_b, "disabled") for i in range(3)]
-b_order = all(vae_b.calls[i]["hash"] == tensor_hash(exp_input_b[i]) for i in range(3))
+# Batch path: every frame at the SAME exact megapixels box (uniform geometry)
 b_sizes = [c["shape"] for c in vae_b.calls]
-check("Path B per-position content == batch frame order (frame 0,1,2)",
-      b_order, str(b_sizes))
-
-# CRITICAL INVARIANT (OLD, deprecated plain-batch path)
-# NOTE: the plain batch path (B, no content regions) CANNOT preserve per-frame
-# geometry — the stack forces one common box. These divergences were the bug;
-# the region-aware path (section 2b) is the canonical fix and passes all of them.
-print("  [note] plain batch path WITHOUT regions remains non-equivalent (old"
-      f" behavior): A={a_sizes} B={b_sizes} (fixed by region path, see 2b)")
+check("Path B: all batch refs at the same exact box (uniform)",
+      len({s for s in b_sizes}) == 1, str(b_sizes))
+check("Path B: encode box == H3BatchImages output box",
+      (b_sizes[0][1], b_sizes[0][2]) == (batch.shape[1], batch.shape[2]),
+      f"encode {b_sizes[0]} batch {tuple(batch.shape)}")
 
 labels_a, labels_b = picture_labels(clip_a.ref_items), picture_labels(clip_b.ref_items)
 check("Picture labels identical order (real)", labels_a == labels_b, str(labels_b))
 check("Prompt enhancer contract: image0 -> <Picture 1>", labels_a[0] == "<Picture 1>")
 
-print("  [note] plain batch path PackedLayout diverges (old behavior): "
-      f"A.seq={build_layout(refs_a).seq_len} "
-      f"B.seq={build_layout(refs_b).seq_len} — fixed by region path, see 2b")
-# ── 2b. region-aware path: crop padding back off -> native geometry restored ─
+# ── 2b. region-aware path: crop the pad back off -> native fitted geometry ──
 print("\n== 2b. region-aware batch (content regions wired) ==")
-batch, regions = H3BatchImages.execute(images=dict(refsA_src))
 vae_c, clip_c, refs_c = run_region(
     MiniMaxH3ReferenceToVideoBatch, batch, regions)
 
 sizes_c = [c["shape"] for c in vae_c.calls]
-inv_c = [a_sizes[i] == sizes_c[i] for i in range(3)]
-check("REGION: per-ref encode SIZE identical to individual (invariant)",
-      all(inv_c), f"A={a_sizes} C={sizes_c}")
-content_c = all(vae_a.calls[i]["hash"] == vae_c.calls[i]["hash"] for i in range(3))
-check("REGION: per-ref encode CONTENT bit-identical to individual",
-      content_c,
-      "content differs — padding not fully cropped")
-blk_hw_a = [(b["latent_h"], b["latent_w"]) for b in refs_a]
-blk_hw_c = [(b["latent_h"], b["latent_w"]) for b in refs_c]
-check("REGION: ref_blocks latent_h/w equal to individual",
-      blk_hw_c == blk_hw_a, f"A={blk_hw_a} C={blk_hw_c}")
+# the region path crops each padded frame back to its content extent, so each
+# ref keeps its OWN fitted geometry (per-frame, not the uniform box) — the
+# encode input must equal the match-scale of the region-cropped content.
+fitted_c = []
+for _i in range(3):
+    _y0, _y1, _x0, _x1 = regions[_i]
+    fitted_c.append(batch[_i:_i + 1][:, _y0:_y1, _x0:_x1, :])
+exp_c = [_resize(fitted_c[_i],
+                 *match_scale_dims(fitted_c[_i].shape[2], fitted_c[_i].shape[1]),
+                 "disabled") for _i in range(3)]
+check("REGION: per-ref encode == match-scale of region-cropped content",
+      all(vae_c.calls[i]["hash"] == tensor_hash(exp_c[i]) for i in range(3)),
+      str(sizes_c))
+check("REGION: per-frame geometry restored (sizes differ per ref, not uniform)",
+      len({s for s in sizes_c}) == 3, str(sizes_c))
 labels_c = picture_labels(clip_c.ref_items)
 check("REGION: Picture labels identical order",
       labels_c == labels_a, str(labels_c))
-lc = build_layout(refs_c)
-la_real = build_layout(refs_a)
-check("REGION: PackedLayout segments + seq_len identical",
-      lc.segments == la_real.segments and lc.seq_len == la_real.seq_len,
-      f"A.seq={la_real.seq_len} C.seq={lc.seq_len}")
 
-# ── 4. split key ordering with a pre-wired ref ─────────────────────────────
+# ── 3. split key ordering with a pre-wired ref ─────────────────────────────
 print("\n== 3. key-ordering probe: wired ref_image_5 + 2-frame batch ==")
 batch2 = torch.cat([frames[1], frames[2]], dim=0)
 vae_w, clip_w, refs_w = run(
@@ -250,8 +259,8 @@ check("wired ref first, batch frames appended after (ref_image_5,6,7)",
       len(refs_w) == 3 and all(vae_w.calls[i]["hash"] == tensor_hash(exp_w[i]) for i in range(3)),
       str(picture_labels(clip_w.ref_items)))
 
-# ── 4. black/gray bar removal (mean + variance guard) ─────────────────────
-print("\n== 4. bar removal: mean+std guard, per-frame crop, min-crop guard ==")
+# ── 4. automatic black-bar removal (always on, WAN defaults) ───────────────
+print("\n== 4. auto bar removal: always on, WAN defaults ==")
 from h3_batch_images import detect_and_crop_black_bars as _crop_bars
 
 def _checkered(h, w):
@@ -270,9 +279,9 @@ def _bar_frame(bar_val, bar_w, content=None, h=128, w=128):
     return x.unsqueeze(0)
 
 def _dark_textured_edge(bar_w=8, h=128, w=128):
-    """Low-mean (0.03) high-std (0.03) two-tone noise edge — texture, not a bar."""
+    """Low-mean (0.03) higher-std (0.07) two-tone noise edge — texture, not a bar."""
     x = _checkered(h, w).clone()
-    noise = (torch.rand(h, bar_w, 3) < 0.5).float() * 0.06
+    noise = (torch.rand(h, bar_w, 3) < 0.5).float() * 0.14   # std ~0.07 > 0.06
     x[:, :bar_w] = noise
     x[:, w - bar_w:] = noise
     return x.unsqueeze(0)
@@ -282,87 +291,174 @@ def _edges_nonuniform(frame, tol=1e-3):
     return (f.std(dim=(1, 2))[0] > tol and f.std(dim=(1, 2))[-1] > tol and
             f.std(dim=(0, 2))[0] > tol and f.std(dim=(0, 2))[-1] > tol)
 
-# AFTER_AUTO: pure black pillarbox cropped
-fb0 = _bar_frame(0.0, 8)
-out0 = _crop_bars(fb0, threshold=0.10, var_threshold=0.02)
+# black pillarbox cropped (default threshold 0.15)
+out0 = _crop_bars(_bar_frame(0.0, 8))
 check("black pillarbox cropped (8px, mean 0)", out0.shape == (1, 128, 112, 3), str(tuple(out0.shape)))
 check("black-bar crop edges non-uniform", _edges_nonuniform(out0))
 
-# AFTER_AUTO: gray bars ABOVE the old 0.05 threshold, caught by new default 0.10
-out1 = _crop_bars(_bar_frame(0.08, 8), threshold=0.10, var_threshold=0.02)
-check("gray bars 0.08 cropped at default threshold 0.10", out1.shape == (1, 128, 112, 3), str(tuple(out1.shape)))
-out_def = H3BatchImages.execute(
-    images={"image_0": _bar_frame(0.08, 8)}, remove_black_bars="auto")[0]
-check("node default threshold crops typical gray bars (0.08)",
-      out_def.shape == (1, 128, 112, 3), str(tuple(out_def.shape)))
+# gray bars 0.08 — above the old threshold, stripped by the node's always-on auto
+out_gray = _crop_bars(_bar_frame(0.08, 8))
+check("gray bars 0.08 stripped at default", out_gray.shape == (1, 128, 112, 3), str(tuple(out_gray.shape)))
 
-# AFTER_AUTO: gray bars ~0.12 cropped when threshold raised to 0.15
-out2 = _crop_bars(_bar_frame(0.12, 8), threshold=0.15, var_threshold=0.02)
-check("gray bars 0.12 cropped at threshold 0.15", out2.shape == (1, 128, 112, 3), str(tuple(out2.shape)))
-
-# min_crop_pct guard: narrow gray band is NOT a crop target
-out3 = _crop_bars(_bar_frame(0.08, 4), threshold=0.10, var_threshold=0.02)
-check("4px gray bars NOT cropped (min_crop_pct guard)", out3.shape == (1, 128, 128, 3), str(tuple(out3.shape)))
-
-# variance guard: dark-textured edge is NOT cropped
-out4 = _crop_bars(_dark_textured_edge(8), threshold=0.10, var_threshold=0.02)
+# variance guard: dark-textured edge (std > 0.06) NOT cropped
+out4 = _crop_bars(_dark_textured_edge(8))
 check("dark-textured edge NOT cropped (variance guard)", out4.shape == (1, 128, 128, 3), str(tuple(out4.shape)))
 
-# per-frame cropping: frame 0 clean, frame 1 gray-barred -> own content box each
-mixed_clean = _checkered(128, 128).unsqueeze(0)
-mixed_barred = _bar_frame(0.08, 8)
-check("mixed batch: clean frame untouched",
-      _crop_bars(mixed_clean, threshold=0.10, var_threshold=0.02).shape == (1, 128, 128, 3))
-check("mixed batch: bar frame cropped to own content",
-      _crop_bars(mixed_barred, threshold=0.10, var_threshold=0.02).shape == (1, 128, 112, 3))
-out_b, regs = H3BatchImages.execute(
-    images={"image_0": mixed_clean, "image_1": mixed_barred},
-    remove_black_bars="auto", black_bar_threshold=0.10, bar_variance_threshold=0.02)
-check("mixed batch regions: clean frame full frame", regs[0] == (0, 128, 0, 128), str(regs[0]))
-check("mixed batch regions: bar frame cropped region", regs[1] == (0, 128, 8, 120), str(regs[1]))
-check("mixed batch output edges non-uniform",
-      all(_edges_nonuniform(out_b[i:i + 1]) for i in range(2)))
+# full node: bars gone end-to-end (bar detector no-op on output)
+mp_out, mp_regs, mp_refs = H3BatchImages.execute(
+    images={"image_0": _bar_frame(0.0, 8), "image_1": _bar_frame(0.08, 8)})
+check("NODE: bars stripped before batching (bar detector no-op on output)",
+      all(_crop_bars(mp_out[i:i + 1]).shape == mp_out[i:i + 1].shape for i in range(2)),
+      str(tuple(mp_out.shape)))
 
-# BEFORE_AUTO: 'none' keeps bars; very low threshold disables gray stripping
-out_none = H3BatchImages.execute(
-    images={"image_0": _bar_frame(0.08, 8)}, remove_black_bars="none")[0]
-check("remove_black_bars=none leaves gray bars intact", out_none.shape == (1, 128, 128, 3), str(tuple(out_none.shape)))
-out_low = H3BatchImages.execute(
-    images={"image_0": _bar_frame(0.08, 8)}, remove_black_bars="auto",
-    black_bar_threshold=0.01, bar_variance_threshold=0.02)[0]
-check("black_bar_threshold=0.01 disables gray-bar stripping", out_low.shape == (1, 128, 128, 3), str(tuple(out_low.shape)))
-out_black_low = H3BatchImages.execute(
-    images={"image_0": _bar_frame(0.0, 8)}, remove_black_bars="auto",
-    black_bar_threshold=0.01, bar_variance_threshold=0.02)[0]
-check("black bars still stripped at threshold=0.01", out_black_low.shape == (1, 128, 112, 3), str(tuple(out_black_low.shape)))
-
-# ── 5. max_long_side cap + empty-frame guard ───────────────────────────────
-print("\n== 5. max_long_side cap + empty-frame guard ==")
-
-def _content_frame(h, w):
-    """Textured mid-gray content (std high enough to never look like a bar)."""
-    return (torch.rand(1, h, w, 3) * 0.5 + 0.25).float()
-
-big = _content_frame(1000, 3000)
-cap_out, cap_regs = H3BatchImages.execute(images={"image_0": big})
-check("longest side capped to 2048",
-      cap_out.shape[2] == 2048,
-      str(tuple(cap_out.shape)))
-check("cap preserves aspect ratio",
-      abs(cap_out.shape[1] / cap_out.shape[2] - 1000 / 3000) < 0.01,
-      f"{cap_out.shape[1]}/{cap_out.shape[2]}")
-check("cap region correct",
-      cap_regs[0] == (0, cap_out.shape[1], 0, cap_out.shape[2]),
-      str(cap_regs[0]))
-nocap, _ = H3BatchImages.execute(images={"image_0": big}, max_long_side=0)
-check("max_long_side=0 disables cap",
-      nocap.shape[2] == 3000,
-      str(tuple(nocap.shape)))
+# ── 5. exact box math + empty-frame guard ──────────────────────────────────
+print("\n== 5. exact WAN box + empty-frame guard ==")
+big = _textured(1000, 3000)
+big_out, big_regs, _ = H3BatchImages.execute(images={"image_0": big}, megapixels=1.0)
+_exp_tw = max(32, round(math.sqrt(1e6 * 3.0) / 32) * 32)   # dominant aspect 3:1
+_exp_th = max(32, round(math.sqrt(1e6 / 3.0) / 32) * 32)
+check("exact box from dominant aspect x 1.0MP (3:1)",
+      (big_out.shape[1], big_out.shape[2]) == (_exp_th, _exp_tw),
+      f"got {tuple(big_out.shape[1:3])} want {(_exp_th, _exp_tw)}")
+check("exact box region == full frame (pad+fit of dominant frame)", big_regs[0] == (0, _exp_th, 0, _exp_tw), str(big_regs[0]))
 black = torch.zeros(1, 1000, 3000, 3)
-blk, _ = H3BatchImages.execute(images={"image_0": black})
+blk, _, _ = H3BatchImages.execute(images={"image_0": black})
 check("all-black frame kept (non-empty guard)",
-      blk.shape[1] > 0 and blk.shape[2] > 0,
-      str(tuple(blk.shape)))
+      blk.shape[1] > 0 and blk.shape[2] > 0, str(tuple(blk.shape)))
+
+# ── 6. megapixels resize: uniform exact box, pad+fit vs crop+fit ───────────
+print("\n== 6. megapixels: uniform exact box, pad+fit never black, crop+fit zero pad ==")
+mp_src = {
+    "image_0": _textured(400, 300),    # portrait (300x400)
+    "image_1": _textured(512, 512),    # square
+    "image_2": _textured(450, 800),    # landscape 16:9 — largest by area = dominant
+}
+_largest = max(mp_src.values(), key=lambda f: f.shape[1] * f.shape[2])
+_lh, _lw = _largest.shape[1], _largest.shape[2]
+_exp_tw = max(32, round(math.sqrt(1e6 * (_lw / _lh)) / 32) * 32)
+_exp_th = max(32, round(math.sqrt(1e6 / (_lw / _lh)) / 32) * 32)
+
+mp_out, mp_regs, mp_refs = H3BatchImages.execute(images=dict(mp_src), megapixels=1.0)
+check("megapixels: all frames identical HxW",
+      len({tuple(f.shape[1:3]) for f in mp_out}) == 1, str(tuple(mp_out.shape)))
+check("megapixels: exact target box (dominant aspect x 1.0MP, aligned 32)",
+      (mp_out.shape[1], mp_out.shape[2]) == (_exp_th, _exp_tw),
+      f"got {tuple(mp_out.shape[1:3])} want {(_exp_th, _exp_tw)}")
+check("pad+fit: no leftover bars (bar detector no-op on output)",
+      all(_crop_bars(mp_out[i:i + 1]).shape == (1, _exp_th, _exp_tw, 3) for i in range(3)))
+check("pad+fit: content inside box, not cropped (regions)",
+      all(r[0] >= 0 and r[1] <= _exp_th and r[2] >= 0 and r[3] <= _exp_tw
+          and r[1] > r[0] and r[3] > r[2] for r in mp_regs), str(mp_regs))
+check("pad+fit: dominant frame pad is minimal (<= one 32px cell)",
+      mp_regs[2][0] < 32 and mp_regs[2][3] > _exp_tw - 32
+      and mp_regs[2][1] == _exp_th, str(mp_regs[2]))
+# pad+fit pads with EDGE REPLICATE — the padded band is non-black (content edge)
+check("pad+fit: pad band is NOT black (edge replicate, no visible bars)",
+      all(mp_out[i][0].mean() > 0.05 and mp_out[i][-1].mean() > 0.05
+          and mp_out[i][:, 0].mean() > 0.05 and mp_out[i][:, -1].mean() > 0.05
+          for i in range(3)), str([float(mp_out[i][0].mean()) for i in range(3)]))
+
+mp_crop, _, _ = H3BatchImages.execute(images=dict(mp_src), megapixels=1.0,
+                                      fit_mode="crop+fit")
+check("crop+fit: exact box",
+      (mp_crop.shape[1], mp_crop.shape[2]) == (_exp_th, _exp_tw),
+      str(tuple(mp_crop.shape)))
+check("crop+fit: no bars at all (zero pad)",
+      all(_crop_bars(mp_crop[i:i + 1]).shape == (1, _exp_th, _exp_tw, 3)
+          for i in range(3)))
+
+# ── Refs (list) output: individual [1,H,W,C] frames, same processed pixels ──
+check("refs list: is a python list with one entry per frame",
+      isinstance(mp_refs, list) and len(mp_refs) == len(mp_out), str(type(mp_refs)))
+check("refs list: each frame is [1,H,W,C] at the exact box",
+      all(f.shape == (1, _exp_th, _exp_tw, 3) for f in mp_refs),
+      [tuple(f.shape) for f in mp_refs])
+check("refs list: pixels identical to the batch frames (same processing)",
+      all(torch.equal(f, mp_out[i:i + 1]) for i, f in enumerate(mp_refs)))
+check("refs list: also emitted from the real-PNG default path",
+      isinstance(refsA_list, list) and len(refsA_list) == len(sources)
+      and all(f.shape[0] == 1 for f in refsA_list))
+
+# ── 7. the stretched-ref trap (regions from one tensor applied to another) ─
+print("\n== 7. stretched-ref trap (the old ri2v wiring) ==")
+# images_batch from H3PromptEnhancerPlus.ref_images_out (bilinear-stretched to
+# the first ref's dims, aspect destroyed) while images_batch_regions comes from
+# H3BatchImages (geometry of the batch box). Regions from one tensor applied to
+# a stretched copy = wrong crops + distortion. Must NOT be confused with the
+# correct same-node region path (2b).
+_stretch_h, _stretch_w = sources[0].shape[1], sources[0].shape[2]
+_matched = []
+for _img in sources:
+    if _img.shape[1] != _stretch_h or _img.shape[2] != _stretch_w:
+        _img = torch.nn.functional.interpolate(
+            _img.permute(0, 3, 1, 2), size=(_stretch_h, _stretch_w),
+            mode="bilinear", align_corners=False).permute(0, 2, 3, 1)
+    _matched.append(_img)
+stretched = torch.cat(_matched, dim=0)
+vae_t, _, _ = run_region(MiniMaxH3ReferenceToVideoBatch, stretched, regions)
+t_sizes = [c["shape"] for c in vae_t.calls]
+check("TRAP: stretched batch NOT identical to the correct region path",
+      t_sizes != sizes_c or any(
+          vae_t.calls[i]["hash"] != vae_c.calls[i]["hash"] for i in range(3)),
+      f"C={sizes_c} T={t_sizes}")
+t_ident = all(vae_a.calls[i]["hash"] == vae_t.calls[i]["hash"]
+              for i in range(3))
+check("TRAP: stretched batch NOT bit-identical to individual refs",
+      not t_ident,
+      "wrong-crop/stretch produced identical encodes — trap wiring not pinned")
+
+# ── 8. internal split: megapixels batch -> batch-sibling split ─────────────
+print("\n== 8. internal split: megapixels batch -> H3ReferenceToVideo ==")
+# The real workflow path: H3BatchImages (auto, megapixels) -> images_batch,
+# split inside execute() — per-frame refs, no regions needed.
+mp_batch, _, _ = H3BatchImages.execute(images=dict(refsA_src), megapixels=0.5)
+vae_mp, clip_mp, refs_mp = run(MiniMaxH3ReferenceToVideoBatch,
+                               images_batch=mp_batch)
+mp_sizes = [c["shape"] for c in vae_mp.calls]
+check("INTERNAL: 3 refs from 3-frame batch",
+      len(refs_mp) == 3 and len(vae_mp.calls) == 3, str(mp_sizes))
+check("INTERNAL: every ref encodes as [1,H,W,C]",
+      all(len(s) == 4 and s[0] == 1 for s in mp_sizes), str(mp_sizes))
+check("INTERNAL: uniform geometry (one exact box for every ref)",
+      len({s for s in mp_sizes}) == 1, str(mp_sizes))
+check("INTERNAL: encode box == megapixels batch box",
+      (mp_sizes[0][1], mp_sizes[0][2]) == (mp_batch.shape[1], mp_batch.shape[2]),
+      f"encode {mp_sizes[0]} batch {tuple(mp_batch.shape)}")
+exp_mp = match_scale_dims(mp_batch.shape[2], mp_batch.shape[1])
+exp_mp_in = [_resize(mp_batch[i:i + 1], *exp_mp, "disabled") for i in range(3)]
+check("INTERNAL: order preserved (frame i == <Picture i+1>)",
+      all(vae_mp.calls[i]["hash"] == tensor_hash(exp_mp_in[i]) for i in range(3)),
+      str(picture_labels(clip_mp.ref_items)))
+check("INTERNAL: labels <Picture 1..3> in batch order",
+      picture_labels(clip_mp.ref_items)
+      == ["<Picture 1>", "<Picture 2>", "<Picture 3>"],
+      str(picture_labels(clip_mp.ref_items)))
+
+# ── 8b. LIST path: H3BatchImages 'Refs (list)' -> video images_batch ───────
+print("\n== 8b. list refs -> H3ReferenceToVideo ==")
+# The user flow: H3BatchImages 'Refs (list)' output (individual [1,H,W,C]
+# frames, internal megapixels processing) wired into the video node's
+# images_batch — each frame handled as its OWN reference, never a collated
+# image. Must be identical to the batch path (8) since the frames are the
+# same processed pixels.
+refs_list = H3BatchImages.execute(images=dict(refsA_src), megapixels=0.5)[2]
+vae_l, clip_l, refs_l = run(MiniMaxH3ReferenceToVideoBatch,
+                            images_batch=refs_list)
+l_sizes = [c["shape"] for c in vae_l.calls]
+check("LIST: 3 refs from 3-frame list",
+      len(refs_l) == 3 and len(vae_l.calls) == 3, str(l_sizes))
+check("LIST: every ref encodes as [1,H,W,C]",
+      all(len(s) == 4 and s[0] == 1 for s in l_sizes), str(l_sizes))
+check("LIST: geometry identical to the batch path",
+      l_sizes == mp_sizes, str(l_sizes))
+check("LIST: order preserved (frame i == <Picture i+1>)",
+      all(vae_l.calls[i]["hash"] == tensor_hash(exp_mp_in[i])
+          for i in range(3)),
+      str(picture_labels(clip_l.ref_items)))
+check("LIST: labels <Picture 1..3> in order",
+      picture_labels(clip_l.ref_items)
+      == ["<Picture 1>", "<Picture 2>", "<Picture 3>"],
+      str(picture_labels(clip_l.ref_items)))
 
 # ── summary ────────────────────────────────────────────────────────────────
 fails = [r for r in RESULTS if not r[1]]

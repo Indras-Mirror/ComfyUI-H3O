@@ -59,21 +59,29 @@ def make_img(h=64, w=64, c=3, seed=0):
 
 def run_enhance(task_type="rv2v", same_subject=False, images_batch=None,
                 source_video=None, source_image=None, auto_describe=False,
-                prompt_override=None):
+                prompt_override=None, editing_frame="on",
+                model="x-ai/grok-4.3", context_length=-1):
     node = H3PromptEnhancer()
     captured = {}
 
-    def fake_caller(api_key, model, system_prompt, user_content, *args, **kwargs):
-        captured["api_key"] = api_key
+    def fake_caller(backend, url, model, system_prompt, user_content, **kwargs):
+        captured["backend"] = backend
+        captured["url"] = url
+        captured["api_key"] = kwargs.get("api_key")
         captured["model"] = model
         captured["system_prompt"] = system_prompt
         captured["content"] = user_content
         # Last content item is the assembled user message text.
         captured["user_text"] = user_content[-1]["text"]
+        captured["seed"] = kwargs.get("seed")
+        captured["max_tokens"] = kwargs.get("max_tokens")
+        captured["budgets"] = captured.get("budgets", []) + [
+            kwargs.get("max_tokens")]
+        captured["n_calls"] = captured.get("n_calls", 0) + 1
         return "MOCK OUTPUT"
 
-    # Patch the module-level binding so enhance() hits the mock, not OpenRouter.
-    h3pe._call_openrouter = fake_caller
+    # Patch the single dispatch seam so enhance() hits the mock.
+    h3pe._call_backend = fake_caller
 
     out, sys_prompt = node.enhance(
         prompt=(prompt_override
@@ -81,7 +89,7 @@ def run_enhance(task_type="rv2v", same_subject=False, images_batch=None,
                 else "A woman walks into the scene."),
         task_type=task_type,
         duration=5.0,
-        model="x-ai/grok-4.3",
+        model=model,
         api_key="test-key",
         images_batch=images_batch,
         source_video=source_video,
@@ -89,6 +97,8 @@ def run_enhance(task_type="rv2v", same_subject=False, images_batch=None,
         same_subject=same_subject,
         auto_describe=auto_describe,
         advanced_prompt="on",
+        editing_frame=editing_frame,
+        context_length=context_length,
     )
     captured["returned_h3_prompt"] = out
     captured["returned_system_prompt"] = sys_prompt
@@ -248,19 +258,23 @@ H3PromptEnhancerPlus = plus_mod.H3PromptEnhancerPlus
 
 def run_enhance_plus(task_type="rv2v", same_subject=False, images_batch=None,
                      source_video=None, source_image=None, auto_describe=False,
-                     enhanced_rules=True):
+                     enhanced_rules=True, editing_frame="on"):
     node = H3PromptEnhancerPlus()
     captured = {}
 
-    def fake_caller(api_key, model, system_prompt, user_content, *args, **kwargs):
-        captured["api_key"] = api_key
+    def fake_caller(backend, url, model, system_prompt, user_content, **kwargs):
+        captured["backend"] = backend
+        captured["url"] = url
+        captured["api_key"] = kwargs.get("api_key")
         captured["model"] = model
         captured["system_prompt"] = system_prompt
         captured["content"] = user_content
         captured["user_text"] = user_content[-1]["text"]
+        captured["seed"] = kwargs.get("seed")
+        captured["n_calls"] = captured.get("n_calls", 0) + 1
         return "MOCK OUTPUT"
 
-    h3pe._call_openrouter = fake_caller
+    h3pe._call_backend = fake_caller
 
     h3_prompt, sys_prompt, ref_images_out = node.enhance_plus(
         prompt="A woman walks into the scene.",
@@ -275,6 +289,7 @@ def run_enhance_plus(task_type="rv2v", same_subject=False, images_batch=None,
         auto_describe=auto_describe,
         advanced_prompt="on",
         enhanced_rules=enhanced_rules,
+        editing_frame=editing_frame,
     )
     captured["returned_h3_prompt"] = h3_prompt
     captured["returned_system_prompt"] = sys_prompt
@@ -294,9 +309,15 @@ check("plus: enhanced rules in system prompt",
       "ENHANCED DIALOGUE RULES" in cap7["returned_system_prompt"]
       and "ENHANCED AUDIO RULES" in cap7["returned_system_prompt"]
       and "ENHANCED CONSISTENCY RULES" in cap7["returned_system_prompt"])
-check("plus: ref_images_out has 3 images (batch of 3)",
-      cap7["ref_images_out"].shape[0] == 3,
-      f"shape={cap7['ref_images_out'].shape}")
+check("plus: ref_images_out is a LIST of 3 individual [1,H,W,C] images",
+      isinstance(cap7["ref_images_out"], list)
+      and len(cap7["ref_images_out"]) == 3
+      and all(f.dim() == 4 and f.shape[0] == 1 for f in cap7["ref_images_out"]),
+      f"type={type(cap7['ref_images_out'])}")
+check("plus: ref_images_out frames are NOT stretched (native geometry kept)",
+      all(tuple(cap7["ref_images_out"][i].shape[1:]) == tuple(batch[i].shape)
+          for i in range(3)),
+      [tuple(f.shape) for f in cap7["ref_images_out"]])
 
 # 7b. Plus with enhanced rules OFF
 cap7b = run_enhance_plus(task_type="rv2v", same_subject=True,
@@ -310,9 +331,10 @@ print("\nH3PromptEnhancerPlus ri2v scene-as-image")
 cap7c = run_enhance_plus(task_type="ri2v", same_subject=True,
                          images_batch=batch, source_video=None,
                          source_image=scene_img, enhanced_rules=True)
-check("plus scene-as-image: ref_images_out has 4 images (1 scene + 3 batch)",
-      cap7c["ref_images_out"].shape[0] == 4,
-      f"shape={cap7c['ref_images_out'].shape}")
+check("plus scene-as-image: ref_images_out is a LIST of 4 images (1 scene + 3 batch)",
+      isinstance(cap7c["ref_images_out"], list)
+      and len(cap7c["ref_images_out"]) == 4,
+      f"type={type(cap7c['ref_images_out'])} len={len(cap7c['ref_images_out']) if isinstance(cap7c['ref_images_out'], list) else 'n/a'}")
 check("plus scene-as-image: prompt still works (Picture 1 is SCENE)",
       "<Picture 1> provides the SCENE" in cap7c["user_text"])
 
@@ -321,9 +343,10 @@ print("\nH3PromptEnhancerPlus t2v (no images)")
 cap7d = run_enhance_plus(task_type="t2v", same_subject=False,
                          images_batch=None, source_video=None,
                          source_image=None, enhanced_rules=True)
-check("plus t2v: ref_images_out is 1x1x1x3 dummy",
-      cap7d["ref_images_out"].shape == (1, 1, 1, 3),
-      f"shape={cap7d['ref_images_out'].shape}")
+check("plus t2v: ref_images_out is an empty list (no refs)",
+      isinstance(cap7d["ref_images_out"], list)
+      and len(cap7d["ref_images_out"]) == 0,
+      f"type={type(cap7d['ref_images_out'])}")
 
 # ── 8. same_subject tri-state (auto/on/off) ───────────────────────────────
 # auto = honor prompt phrasing; on = force unified; off = force per-image.
@@ -449,5 +472,453 @@ cap10c = run_enhance(task_type="ri2v", same_subject=True,
 t10c = cap10c["user_text"]
 check("scene-as-image: editing frame absent (no <Video 1> plate)",
       "CHARACTER-REPLACEMENT EDITING FRAME" not in t10c)
+
+print("\nediting frame toggle OFF: rv2v with plate video")
+cap10d = run_enhance(task_type="rv2v", same_subject=True,
+                     images_batch=batch, source_video=src_video,
+                     editing_frame="off")
+t10d = cap10d["user_text"]
+check("off: no CHARACTER-REPLACEMENT EDITING FRAME header",
+      "CHARACTER-REPLACEMENT EDITING FRAME" not in t10d)
+check("off: no 'EDITED VERSION of <Video' framing sentence",
+      "EDITED VERSION of <Video 1>" not in t10d)
+check("off: no MOTION INHERITANCE demands",
+      "MOTION INHERITANCE" not in t10d)
+check("off: no integration/optics/lighting block",
+      "INTEGRATION:" not in t10d and "OPTICS + LIGHTING" not in t10d)
+check("off: no 'Do NOT write a new scene' rule",
+      "Do NOT write a new scene" not in t10d)
+check("off: base rv2v ref section still present",
+      "static reference video (<Video 1>) is attached" in t10d)
+
+print("\nediting frame toggle OFF: ri2v with source video")
+cap10e = run_enhance(task_type="ri2v", same_subject=True,
+                     images_batch=batch, source_video=src_video,
+                     editing_frame="off")
+t10e = cap10e["user_text"]
+check("off ri2v: no editing frame header",
+      "CHARACTER-REPLACEMENT EDITING FRAME" not in t10e)
+check("off ri2v: no 'EDITED VERSION of <Video' framing sentence",
+      "EDITED VERSION of <Video 1>" not in t10e)
+check("off ri2v: no MOTION INHERITANCE demands",
+      "MOTION INHERITANCE" not in t10e)
+check("off ri2v: base ri2v scene/structure block still present",
+      "<Video 1> supplies the" in t10e
+      and "partially_preserved" in t10e)
+
+print("\nediting frame ON (default): rv2v with plate video — frame present")
+cap10f = run_enhance(task_type="rv2v", same_subject=True,
+                     images_batch=batch, source_video=src_video,
+                     editing_frame="on")
+t10f = cap10f["user_text"]
+check("on rv2v: editing frame injected",
+      "CHARACTER-REPLACEMENT EDITING FRAME" in t10f
+      and "MOTION INHERITANCE" in t10f)
+check("on rv2v: framing sentence present",
+      "EDITED VERSION of <Video 1>" in t10f)
+
+print("\nediting frame toggle OFF: ri2v scene-as-image — still absent")
+cap10g = run_enhance(task_type="ri2v", same_subject=True,
+                     images_batch=batch, source_video=None,
+                     source_image=scene_img, editing_frame="off")
+t10g = cap10g["user_text"]
+check("scene-as-image off: frame absent regardless of toggle",
+      "CHARACTER-REPLACEMENT EDITING FRAME" not in t10g
+      and "MOTION INHERITANCE" not in t10g)
+
+print("\nediting frame toggle: Plus node rv2v with plate video")
+cap10h = run_enhance_plus(task_type="rv2v", same_subject=True,
+                          images_batch=batch, source_video=src_video,
+                          enhanced_rules=True, editing_frame="on")
+t10h = cap10h["user_text"]
+check("plus on: editing frame injected",
+      "CHARACTER-REPLACEMENT EDITING FRAME" in t10h
+      and "MOTION INHERITANCE" in t10h)
+cap10i = run_enhance_plus(task_type="rv2v", same_subject=True,
+                          images_batch=batch, source_video=src_video,
+                          enhanced_rules=True, editing_frame="off")
+t10i = cap10i["user_text"]
+check("plus off: editing frame suppressed",
+      "CHARACTER-REPLACEMENT EDITING FRAME" not in t10i
+      and "MOTION INHERITANCE" not in t10i
+      and "EDITED VERSION of <Video 1>" not in t10i)
+check("plus off: enhanced rules still injected",
+      "ENHANCED DIALOGUE RULES" in cap10i["returned_system_prompt"])
+check("plus off: ref_images_out still passes through (list of 3)",
+      isinstance(cap10i["ref_images_out"], list)
+      and len(cap10i["ref_images_out"]) == 3,
+      f"type={type(cap10i['ref_images_out'])}")
+
+# ── 11. llamacpp backend routing (registry url/model, spawn/kill wiring) ───
+# The on-demand llama-server lifecycle is mocked here (no GPU); the live
+# spawn→serve→shutdown is covered by test_h3_llamacpp_e2e.py.
+print("\nllamacpp routing: qwen3.8-heretic-ara (spawned, both passes)")
+img = make_img(seed=7).unsqueeze(0)  # [1, H, W, C]
+
+def run_enhance_local(local_backend="llamacpp/qwen3.8-heretic-ara",
+                      task_type="i2v", auto_describe=True, source_image=img,
+                      seed=-1, context_length=-1,
+                      spawn_result=("spawned", 424242),
+                      prompt_override=None):
+    node = H3PromptEnhancer()
+    captured = {}
+    spawn_calls = []
+    kill_calls = []
+
+    def fake_caller(backend, url, model, system_prompt, user_content, **kwargs):
+        captured["backend"] = backend
+        captured["url"] = url
+        captured["model"] = model
+        captured["system_prompt"] = system_prompt
+        captured["user_text"] = user_content[-1]["text"]
+        captured["seed"] = kwargs.get("seed")
+        captured["max_tokens"] = kwargs.get("max_tokens")
+        captured["budgets"] = captured.get("budgets", []) + [
+            kwargs.get("max_tokens")]
+        captured["n_calls"] = captured.get("n_calls", 0) + 1
+        return "MOCK OUTPUT"
+
+    def fake_spawn(defaults, **kw):
+        spawn_calls.append((defaults.get("label"), kw.get("context_length")))
+        return spawn_result
+
+    def fake_kill(pid):
+        kill_calls.append(pid)
+
+    h3pe._call_backend = fake_caller
+    h3pe._spawn_llama_server = fake_spawn
+    h3pe._kill_llama_server = fake_kill
+    h3pe._check_ollama = lambda url: True   # no network in unit tests
+    h3pe._unload_ollama_model = lambda *a, **k: None  # no real ollama unload
+
+    out, sys_prompt = node.enhance(
+        prompt=(prompt_override if prompt_override is not None
+                else "A woman walks into the scene."),
+        task_type=task_type,
+        duration=5.0,
+        model="x-ai/grok-4.3",
+        local_backend=local_backend,
+        source_image=source_image,
+        auto_describe=auto_describe,
+        advanced_prompt="on",
+        seed=seed,
+        context_length=context_length,
+    )
+    captured["returned_h3_prompt"] = out
+    captured["spawn_calls"] = spawn_calls
+    captured["kill_calls"] = kill_calls
+    return captured
+
+cap11 = run_enhance_local(local_backend="llamacpp/qwen3.8-heretic-ara",
+                          seed=1234, context_length=131072)
+check("llamacpp: routed to llamacpp backend", cap11["backend"] == "llamacpp")
+check("llamacpp: url from registry (8098)",
+      cap11["url"] == "http://127.0.0.1:8098", f"url={cap11['url']}")
+check("llamacpp: model id from registry",
+      cap11["model"] == "Qwen3.8-27B-heretic-ara.i1-Q4_K_M.gguf",
+      f"model={cap11['model']}")
+check("llamacpp: spawn called once with node context_length",
+      cap11["spawn_calls"] ==
+      [("Qwen3.8-27B heretic-ara (llama.cpp) 16.8GB", 131072)],
+      f"spawn_calls={cap11['spawn_calls']}")
+check("llamacpp: kill called with the spawned pid",
+      cap11["kill_calls"] == [424242], f"kill_calls={cap11['kill_calls']}")
+check("llamacpp: both passes share one instance (analyze + write)",
+      cap11["n_calls"] == 2, f"n_calls={cap11['n_calls']}")
+check("llamacpp: seed threaded through", cap11["seed"] == 1234)
+check("llamacpp: auto ctx (-1) falls back to backend default",
+      run_enhance_local(context_length=-1)["spawn_calls"][0][1] == -1)
+check("llamacpp: LLAMA style prefix applied (not JoyCaption)",
+      "Narrate the scene directly" in cap11["system_prompt"]
+      and "NOT captions or lists" not in cap11["system_prompt"])
+check("llamacpp: NSFW permission still applied",
+      "anatomically accurate descriptions" in cap11["system_prompt"])
+
+print("\nllamacpp routing: muse-glimmer (8097, YaRN entry)")
+cap11b = run_enhance_local(local_backend="llamacpp/muse-glimmer", seed=-1)
+check("glimmer: url from registry (8097)",
+      cap11b["url"] == "http://127.0.0.1:8097", f"url={cap11b['url']}")
+check("glimmer: model id from registry",
+      cap11b["model"] == "darkc0de_Muse-Glimmer-30B-heretic-IQ4_NL",
+      f"model={cap11b['model']}")
+check("glimmer: spawn/kill wired",
+      cap11b["spawn_calls"][0][0] == "Muse-Glimmer-30B heretic (llama.cpp) 16.2GB"
+      and cap11b["kill_calls"] == [424242])
+
+print("\nllamacpp routing: reuse path (no kill)")
+cap11c = run_enhance_local(local_backend="llamacpp/qwen3.8-heretic-ara",
+                           spawn_result=("reused", None))
+check("reuse: no kill when server was reused", cap11c["kill_calls"] == [])
+check("reuse: dispatch still routed to llamacpp", cap11c["backend"] == "llamacpp")
+
+print("\nollama/joycaption: unchanged backend + JoyCaption style prompt")
+cap11d = run_enhance_local(local_backend="ollama/joycaption", seed=7)
+check("ollama: routed to ollama backend", cap11d["backend"] == "ollama")
+check("ollama: url from registry",
+      cap11d["url"] == "http://localhost:11434", f"url={cap11d['url']}")
+check("ollama: JoyCaption style prompt applied",
+      "NOT captions or lists" in cap11d["system_prompt"])
+check("ollama: LLAMA style prompt NOT applied",
+      "Narrate the scene directly" not in cap11d["system_prompt"])
+
+# ── 12. generation budget ceiling (refinement #2: context_length) ───────────
+# context_length is the CEILING for both passes on remote + llamacpp:
+# per-call max_tokens = max(existing widget budget, min(context_length, cap)).
+print("\ngeneration budget ceiling (remote)")
+cap12 = run_enhance(task_type="i2v", source_image=img, auto_describe=True,
+                    context_length=-1)  # auto → grok-4.3 cap 131072 (verified)
+check("remote auto (grok): write budget raised to 131072",
+      cap12["max_tokens"] == 131072,
+      f"write={cap12['max_tokens']} budgets={cap12['budgets']}")
+check("remote auto: analyze budget also 131072",
+      cap12["budgets"] == [131072, 131072], f"budgets={cap12['budgets']}")
+cap12b = run_enhance(task_type="t2v", model="google/gemini-2.5-flash")
+check("remote gemini: verified cap 65536 applies",
+      cap12b["max_tokens"] == 65536, f"write={cap12b['max_tokens']}")
+cap12c = run_enhance(task_type="t2v", context_length=8192)
+check("remote explicit ctx 8192: ceiling = min(8192, 16384)",
+      cap12c["max_tokens"] == 8192, f"write={cap12c['max_tokens']}")
+cap12d = run_enhance(task_type="t2v", context_length=4096)
+check("remote explicit ctx 4096: widget floor holds (4096)",
+      cap12d["max_tokens"] == 4096, f"write={cap12d['max_tokens']}")
+
+print("\ngeneration budget ceiling (llamacpp + ollama)")
+cap12e = run_enhance_local(local_backend="llamacpp/qwen3.8-heretic-ara",
+                           task_type="i2v", source_image=img,
+                           auto_describe=True, context_length=-1)
+check("llamacpp auto: write budget 16384 (min(ctx, 16384))",
+      cap12e["max_tokens"] == 16384, f"write={cap12e['max_tokens']}")
+check("llamacpp auto: analyze budget also 16384",
+      cap12e["budgets"] == [16384, 16384], f"budgets={cap12e['budgets']}")
+cap12f = run_enhance_local(local_backend="ollama/joycaption", task_type="i2v",
+                           source_image=img, auto_describe=True, seed=7)
+check("ollama: budget unchanged (4096 widget, no ceiling)",
+      cap12f["max_tokens"] == 4096, f"write={cap12f['max_tokens']}")
+
+# ── 13. chain_conversation toggle (two-pass conversation chaining) ─────────
+# A/B: OFF = the write call is independent (payload byte-identical); ON = the
+# write request carries pass 1's messages + raw assistant reply as history.
+import json  # noqa: E402
+
+ANALYZE_JSON = ('[{"image_id":"image0","subject":"a woman in red",'
+                '"scene":"a bar","current_state":"walking"}]')
+
+def run_enhance_chain(chain_conversation="off", local_backend=None,
+                      task_type="i2v", source_image=img, auto_describe=True,
+                      editing_frame="on", spawn_result=("spawned", 424242)):
+    node = H3PromptEnhancer()
+    calls = []
+
+    def fake_caller(backend, url, model, system_prompt, user_content, **kwargs):
+        calls.append({
+            "backend": backend, "url": url, "model": model,
+            "system_prompt": system_prompt, "content": user_content,
+            "user_text": user_content[-1]["text"],
+            "kwargs": kwargs,
+        })
+        if kwargs.get("return_raw"):
+            # Mirror what the real leaves return in return_raw mode.
+            messages_sent = [{"role": "system", "content": system_prompt},
+                             {"role": "user", "content": user_content}]
+            return (ANALYZE_JSON, "RAW ANALYZE REPLY", messages_sent)
+        return "MOCK OUTPUT"
+
+    h3pe._call_backend = fake_caller
+    if local_backend:
+        h3pe._spawn_llama_server = lambda defaults, **kw: spawn_result
+        h3pe._kill_llama_server = lambda pid: None
+        h3pe._check_ollama = lambda url: True
+        h3pe._unload_ollama_model = lambda *a, **k: None
+
+    kw = dict(
+        prompt="A woman walks into the scene.",
+        task_type=task_type,
+        duration=5.0,
+        model="x-ai/grok-4.3",
+        source_image=source_image,
+        auto_describe=auto_describe,
+        advanced_prompt="on",
+        editing_frame=editing_frame,
+        chain_conversation=chain_conversation,
+    )
+    if local_backend:
+        kw["local_backend"] = local_backend
+    else:
+        kw["api_key"] = "test-key"
+    out, sys_prompt = node.enhance(**kw)
+    return calls, out, sys_prompt
+
+print("\nchain_conversation OFF (default) — write call independent")
+calls_off, out_off, _ = run_enhance_chain("off")
+check("chain off: 2 calls (analyze + write)",
+      len(calls_off) == 2, f"n={len(calls_off)}")
+check("chain off: analyze call not in return_raw mode",
+      not calls_off[0]["kwargs"].get("return_raw"))
+check("chain off: write call has NO history kwarg",
+      "history" not in calls_off[1]["kwargs"],
+      f"kwargs={calls_off[1]['kwargs']}")
+check("chain off: write system+user still passed independently",
+      "Context Analysis" in calls_off[1]["user_text"]
+      and calls_off[1]["system_prompt"] != calls_off[0]["system_prompt"])
+check("chain off: mock output returned", out_off == "MOCK OUTPUT")
+
+print("\nchain_conversation ON — write carries pass 1 conversation")
+calls_on, out_on, _ = run_enhance_chain("on")
+check("chain on: 2 calls (analyze + write)",
+      len(calls_on) == 2, f"n={len(calls_on)}")
+analyze_on, write_on = calls_on
+check("chain on: analyze call uses return_raw",
+      analyze_on["kwargs"].get("return_raw") is True)
+hist = write_on["kwargs"].get("history")
+check("chain on: write call received history (3 msgs)",
+      hist is not None and len(hist) == 3,
+      f"len={len(hist) if hist else None}")
+check("chain on: history[0] = pass1 system message",
+      hist[0] == {"role": "system", "content": analyze_on["system_prompt"]})
+check("chain on: history[1] = pass1 user message",
+      hist[1] == {"role": "user", "content": analyze_on["content"]})
+check("chain on: history[2] = pass1 raw assistant reply",
+      hist[2] == {"role": "assistant", "content": "RAW ANALYZE REPLY"})
+full_msgs = ([{"role": "system", "content": write_on["system_prompt"]}]
+             + hist + [{"role": "user", "content": write_on["content"]}])
+check("chain on: write msgs = [system]+pass1 msgs+assistant raw+user",
+      [m["role"] for m in full_msgs] ==
+      ["system", "system", "user", "assistant", "user"])
+check("chain on: Context Analysis text still in write template",
+      "--- Context Analysis" in write_on["user_text"])
+check("chain on: mock output returned", out_on == "MOCK OUTPUT")
+
+print("\nchain_conversation ON — routing (openrouter / llamacpp / ollama)")
+calls_or, _, _ = run_enhance_chain("on")
+check("chain on: openrouter routed for both passes",
+      calls_or[0]["backend"] == "openrouter"
+      and calls_or[1]["backend"] == "openrouter")
+calls_ll, _, _ = run_enhance_chain("on",
+                                   local_backend="llamacpp/qwen3.8-heretic-ara")
+check("chain on: llamacpp routed, history flows",
+      calls_ll[0]["backend"] == "llamacpp"
+      and calls_ll[1]["backend"] == "llamacpp"
+      and calls_ll[1]["kwargs"].get("history") is not None)
+calls_ol, _, _ = run_enhance_chain("on", local_backend="ollama/joycaption")
+check("chain on: ollama routed, history flows",
+      calls_ol[0]["backend"] == "ollama"
+      and calls_ol[1]["backend"] == "ollama"
+      and calls_ol[1]["kwargs"].get("history") is not None)
+
+print("\nchain_conversation — widget order + Plus passthrough")
+base_keys = list(H3PromptEnhancer.INPUT_TYPES()["optional"].keys())
+check("base: chain_conversation is LAST optional widget",
+      base_keys[-1] == "chain_conversation", f"last={base_keys[-1]}")
+plus_keys = list(H3PromptEnhancerPlus.INPUT_TYPES()["optional"].keys())
+check("plus: chain_conversation is LAST optional widget (after enhanced_rules)",
+      plus_keys[-1] == "chain_conversation", f"last={plus_keys[-1]}")
+
+def run_enhance_plus_chain(chain_conversation="on"):
+    node = H3PromptEnhancerPlus()
+    calls = []
+
+    def fake_caller(backend, url, model, system_prompt, user_content, **kwargs):
+        calls.append({"system_prompt": system_prompt, "content": user_content,
+                      "kwargs": kwargs})
+        if kwargs.get("return_raw"):
+            return (ANALYZE_JSON, "RAW ANALYZE REPLY",
+                    [{"role": "system", "content": system_prompt},
+                     {"role": "user", "content": user_content}])
+        return "MOCK OUTPUT"
+
+    h3pe._call_backend = fake_caller
+    h3_prompt, sys_prompt, ref_batch = node.enhance_plus(
+        prompt="A woman walks into the scene.",
+        task_type="i2v",
+        duration=5.0,
+        model="x-ai/grok-4.3",
+        api_key="test-key",
+        source_image=img,
+        auto_describe=True,
+        advanced_prompt="on",
+        enhanced_rules=True,
+        chain_conversation=chain_conversation,
+    )
+    return calls, h3_prompt, ref_batch
+
+calls_p, out_p, ref_p = run_enhance_plus_chain("on")
+check("plus: chain_conversation passes through (write history present)",
+      len(calls_p) == 2 and calls_p[1]["kwargs"].get("history") is not None)
+check("plus: enhanced rules still applied",
+      "ENHANCED DIALOGUE RULES" in calls_p[1]["system_prompt"])
+check("plus: ref_images_out still passes through (list)",
+      isinstance(ref_p, list), f"type={type(ref_p)}")
+
+# ── 14. seam: real leaf message construction (history splice + return_raw) ──
+# The node-level tests above mock _call_backend; here the REAL leaf functions
+# run against a mocked urlopen to prove the OFF payload is byte-identical and
+# the history splice produces [system]+history+[user].
+print("\nseam: real _call_backend leaf construction (mocked urlopen)")
+h3o_mod = sys.modules["h3o_prompt_test.h3o_shared"]
+SEAM_RESP = (b'{"choices":[{"message":{"content":"{\\"rewritten_text\\": '
+             b'\\"HELLO\\"}"}}]}')
+
+seam_cap = {}
+
+def fake_urlopen(req, timeout=None):
+    seam_cap["payload"] = json.loads(req.data.decode())
+    seam_cap["url"] = req.full_url
+
+    class R:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return SEAM_RESP
+
+    return R()
+
+_old_urlopen = h3o_mod.urllib.request.urlopen
+h3o_mod.urllib.request.urlopen = fake_urlopen
+try:
+    parsed_off = h3o_mod._call_llama_chat(
+        "http://127.0.0.1:8098", "m", "USER TEXT", system_prompt="SYS")
+    msgs_off = seam_cap["payload"]["messages"]
+    check("seam off: parsed text extracted", parsed_off == "HELLO")
+    check("seam off: messages == [system, user] (byte-identical shape)",
+          msgs_off == [{"role": "system", "content": "SYS"},
+                       {"role": "user", "content": "USER TEXT"}],
+          f"msgs={msgs_off}")
+
+    parsed_r, raw_r, sent_r = h3o_mod._call_llama_chat(
+        "http://127.0.0.1:8098", "m", "USER TEXT", system_prompt="SYS",
+        return_raw=True)
+    check("seam raw: returns (parsed, raw_content, messages_sent)",
+          parsed_r == "HELLO" and raw_r == '{"rewritten_text": "HELLO"}'
+          and sent_r == msgs_off)
+
+    hist = [{"role": "assistant", "content": "A1"}]
+    parsed_h, raw_h, sent_h = h3o_mod._call_llama_chat(
+        "http://127.0.0.1:8098", "m", "USER TEXT", system_prompt="SYS",
+        history=hist, return_raw=True)
+    check("seam history: [system]+history+[user]",
+          sent_h == [{"role": "system", "content": "SYS"},
+                     {"role": "assistant", "content": "A1"},
+                     {"role": "user", "content": "USER TEXT"}])
+
+    parsed_b, raw_b, sent_b = h3o_mod._call_backend(
+        "llamacpp", "http://127.0.0.1:8098", "m", "SYS", "USER TEXT",
+        history=hist, return_raw=True)
+    check("seam backend: history+return_raw threaded through dispatcher",
+          sent_b == [{"role": "system", "content": "SYS"},
+                     {"role": "assistant", "content": "A1"},
+                     {"role": "user", "content": "USER TEXT"}])
+
+    parsed_or, raw_or, sent_or = h3o_mod._call_openrouter(
+        "KEY", "m", "SYS", "USER TEXT", return_raw=True)
+    check("seam openrouter: tuple contract holds",
+          parsed_or == "HELLO" and raw_or == '{"rewritten_text": "HELLO"}'
+          and sent_or == [{"role": "system", "content": "SYS"},
+                          {"role": "user", "content": "USER TEXT"}])
+finally:
+    h3o_mod.urllib.request.urlopen = _old_urlopen
 
 print(f"\nALL {PASS} CHECKS PASSED")

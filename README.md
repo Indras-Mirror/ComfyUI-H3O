@@ -8,7 +8,8 @@ companion nodes.
 - [**H3PromptEnhancer**](#h3promptenhancer) — vision-LLM prompt enhancement
   into MiniMax H3's structured prompt format
 - [**H3PromptEnhancerPlus**](#h3promptenhancerplus) — same, plus
-  `ref_images_out` (images in exact `<Picture N>` order) + `enhanced_rules` toggle
+  `ref_images_out` (images in exact `<Picture N>` order), `enhanced_rules`
+  toggle, and `cell_1..cell_6` outputs for `ri2i_multi` character sheets
 - [**H3AspectRatioDetector**](#h3aspectratiodetector) — auto-match the
   Resolution Selector canvas to a source image's aspect ratio
 - [**H3RefBoostV**](#h3refboostv) — attention-level reference V-boost +
@@ -43,6 +44,8 @@ The output schema switches on the **task_type** widget:
 | `r2v` | full-reference mode (subject/picture/video/audio labels) | 6 fields |
 | `rv2v` | static ref-video = scene, images = replacement characters (legacy two-subject) | 6 fields |
 | `ri2v` | **reference images replace a character in a source video, scene/structure preserved** | 6 fields |
+| `ri2i` | **reference images → character sheet: 6-shot turnaround of ONE character** | 6 fields |
+| `ri2i_multi` | **one call → six static cell prompts (front/face/left/right/back/seductive) as JSON** | JSON cells |
 
 **`ri2v` is the recommended character-swap mode.** It reuses the proven `r2v`
 6-field template and applies the empirically-correct retention recipe (matching
@@ -59,6 +62,46 @@ person" in the raw prompt, auto-detected) merges every reference image into ONE
 unified `<Subject 1>`; otherwise each picture anchors its own replacement
 character. The node also hard-bounds the valid `<Picture N>` labels to the exact
 count of attached images, so the LLM cannot invent phantom picture labels.
+
+### Character sheets: `ri2i` and `ri2i_multi`
+
+**`ri2i`** (reference images → character sheet) writes the prompt for a
+character *turnaround sheet*: the reference images define ONE character
+(merged via `same_subject`, every `<Picture N>` marked `attribute_transfer`,
+never `weak_reference`), and `detailed_description` is forced into the
+6-shot sheet structure — full-body front, face close-up, left profile, right
+profile, back, and a final expression shot — with locked-off static cameras,
+hard cuts at 00:00.000 / 00:00.750 / 00:01.500 / 00:02.250 / 00:03.000, a plain
+seamless neutral grey studio backdrop, identical clothing/details across every
+shot, and no scene changes. The 6-field output drops straight into
+`H3ReferenceToVideo` / `MiniMaxH3ImageToVideo`.
+
+**Single-view mode:** if the user prompt names ONE view ("front view", "left
+profile", "face close-up", "back view") as a single still image, `ri2i` writes
+that one static shot instead of the six-shot sequence — no cut timestamps, no
+multi-shot structure. Everything else (identity rules, backdrop, field
+structure) is unchanged. This is how one cell of a sheet gets its prompt.
+
+**`ri2i_multi`** (multi-cell mode) writes all **six** static cell prompts in a
+**single LLM call** — the refs are analyzed once (auto-describe pass) and the
+write pass returns JSON:
+
+```
+{"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."},
+           {"view": "left", "prompt": "..."},  {"view": "right", "prompt": "..."},
+           {"view": "back", "prompt": "..."},  {"view": "seductive", "prompt": "..."}]}
+```
+
+Each `prompt` is a self-contained 150-250 word still-image prompt (opens with
+"One completely still image.", identity from the reference analysis, plain
+neutral grey studio backdrop, completely static). The sixth cell is a seductive
+expression by default — the user notes can request any other expression.
+**`H3PromptEnhancerPlus` parses this into its `cell_1` … `cell_6` outputs**
+(same fixed order), one per sheet cell; on malformed JSON the raw reply is
+returned on `cell_1` so nothing is silently lost. A character sheet workflow
+then wires `cell_N` → the prompt input of six independent static
+`H3ReferenceToVideo` takes (length=5, frame 0 = the image) and composites the
+six stills into the final labeled sheet.
 
 **3-field (base)** format:
 
@@ -250,13 +293,16 @@ exercise the V-scaling at all).
 
 ## H3PromptEnhancerPlus
 
-Identical to `H3PromptEnhancer` plus two additions:
+Identical to `H3PromptEnhancer` plus these additions:
 
 - **`ref_images_out`** — passes the reference images through in the exact
   `<Picture N>` order the prompt uses. Wire it to `H3ReferenceToVideo`'s
   `images_batch` so the renderer numbers the refs identically to the prompt.
   Do NOT also wire images into the individual `ref_image_0/1/2` slots — that
   doubles them up.
+- **`cell_1` … `cell_6` outputs** — with `task_type = ri2i_multi`, the single
+  LLM reply is parsed into six static cell prompts (fixed order: front, face,
+  left, right, back, seductive); empty strings for every other task type.
 - **`enhanced_rules`** (default on) — injects community dialogue/audio/
   consistency rules into the system prompt. Toggle off for original behavior
   (A/B testing).

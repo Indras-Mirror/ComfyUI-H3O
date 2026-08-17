@@ -41,15 +41,23 @@ class MiniMaxH3ReferenceToVideoBatch(MiniMaxH3ReferenceToVideo):
         schema.display_name = "MiniMax H3 Reference to Video (Batch)"
         # The official node docstring mentions the fixed order; keep it, but note
         # batch frames slot in after the individually-wired ref images.
+        # INPUT_IS_LIST: images_batch can arrive as a python LIST of individual
+        # frames (from H3BatchImages 'Refs (list)' or the enhancer's
+        # ref_images_out) OR a batched tensor — either way each frame becomes
+        # its OWN ref_image_N. The executor wraps every input in a list; all
+        # scalar inputs are unwrapped in execute() before super().execute().
+        schema.is_input_list = True
         schema.inputs = schema.inputs + [
             io.Image.Input(
                 "images_batch",
                 optional=True,
-                tooltip="Batch of reference images (e.g. from BatchImagesNode). "
-                        "Each frame becomes a numbered ref image AFTER any wired "
-                        "ref_image_* slots (ref_image_0 wired + 5-frame batch -> "
-                        "image0..image5). Prompt labels are <Picture 1>..<Picture N> "
-                        "in the same order.",
+                tooltip="Reference images — a LIST of individual [1,H,W,C] frames "
+                        "(e.g. H3BatchImages 'Refs (list)' or the Prompt Enhancer "
+                        "Plus 'ref_images_out') or a batched tensor. Each frame "
+                        "becomes a numbered ref image AFTER any wired ref_image_* "
+                        "slots (ref_image_0 wired + 5 frames -> image0..image5). "
+                        "Prompt labels are <Picture 1>..<Picture N> in the same "
+                        "order.",
             ),
             io.AnyType.Input(
                 "images_batch_regions",
@@ -63,14 +71,61 @@ class MiniMaxH3ReferenceToVideoBatch(MiniMaxH3ReferenceToVideo):
         ]
         return schema
 
+    @staticmethod
+    def _un1(v):
+        """INPUT_IS_LIST wraps every input in a 1-element list — unwrap scalars."""
+        if isinstance(v, tuple) and len(v) == 1 and v[0] is None:
+            return None
+        return v[0] if isinstance(v, (list, tuple)) and len(v) == 1 else v
+
+    @staticmethod
+    def _unwrap_dict(d):
+        """INPUT_IS_LIST wraps each AUTO-DICT value in a 1-element list too.
+
+        The autogrow dict inputs (ref_images / ref_videos / ref_video_audios /
+        ref_audios) arrive as {"ref_video_0": [tensor], ...} under INPUT_IS_LIST
+        — each value must be unwrapped or the official node sees a list where a
+        tensor belongs. A no-op for direct (test) calls.
+        """
+        if not d:
+            return d
+        return {k: (v[0] if isinstance(v, (list, tuple)) and len(v) == 1 else v)
+                for k, v in d.items()}
+
     @classmethod
     def execute(cls, clip, vae, audio_vae, prompt, width, height, length,
                 ref_image_size="match", ref_images=None, ref_videos=None,
                 ref_video_audios=None, ref_audios=None, images_batch=None,
                 images_batch_regions=None):
+        # INPUT_IS_LIST unwrap — the executor wraps every input in a list.
+        clip = cls._un1(clip)
+        vae = cls._un1(vae)
+        audio_vae = cls._un1(audio_vae)
+        prompt = cls._un1(prompt)
+        width = cls._un1(width)
+        height = cls._un1(height)
+        length = cls._un1(length)
+        ref_image_size = cls._un1(ref_image_size)
+        ref_images = cls._unwrap_dict(cls._un1(ref_images))
+        ref_videos = cls._unwrap_dict(cls._un1(ref_videos))
+        ref_video_audios = cls._unwrap_dict(cls._un1(ref_video_audios))
+        ref_audios = cls._unwrap_dict(cls._un1(ref_audios))
+        images_batch_regions = cls._un1(images_batch_regions)
+
         if images_batch is not None:
+            images_batch = cls._un1(images_batch)
             ref_images = dict(ref_images) if ref_images else {}
-            frames = images_batch if images_batch.dim() == 4 else images_batch.unsqueeze(0)
+            # images_batch may arrive as:
+            #  - a LIST of individual [1,H,W,C] frames (H3BatchImages 'Refs
+            #    (list)' / enhancer ref_images_out) -> frames = the list
+            #  - a batched tensor [B,H,W,C] (legacy batch output) -> split here
+            # Both produce per-frame refs; each frame is its OWN reference.
+            if isinstance(images_batch, (list, tuple)):
+                frames = [f.unsqueeze(0) if f.dim() == 3 else f
+                          for f in images_batch if f is not None]
+            else:
+                frames = (images_batch if images_batch.dim() == 4
+                          else images_batch.unsqueeze(0))
             # content-region side-channel (padded common-box layout) — the batch
             # node emits ONE region list for the whole batch, in frame order.
             region_list = None
@@ -83,7 +138,7 @@ class MiniMaxH3ReferenceToVideoBatch(MiniMaxH3ReferenceToVideo):
                     region_list = images_batch_regions
                 elif hasattr(images_batch_regions, "__len__") \
                         and len(images_batch_regions) == 4:
-                    region_list = [tuple(images_batch_regions)] * frames.shape[0]
+                    region_list = [tuple(images_batch_regions)] * len(frames)
             # find the next free ordinal among existing ref_image_N keys
             used = set()
             for key in ref_images.keys():
