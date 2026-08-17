@@ -52,15 +52,29 @@ _WRAPPER_KEY = "h3_refboost_char"
 _STATE_KEY = "__h3_refboost_char_state"
 
 def _ramp(p, schedule, step_threshold):
-    """0 at high sigma -> 1 at low sigma, per schedule.
+    """0 at high sigma -> 1 at low sigma by default, per schedule.
 
     p < 1e-4 is floored to 0 so the identity pass is a genuine no-op at very
     high sigma (sigma clamps to 1-1e-6, which would otherwise leave a sub-eps
     mix that still rewrites video tensors every step).
+
+    "constant" keeps the effect at full strength for EVERY step — used when
+    the source/ref effect must hold through the whole run (e.g. a scene ref
+    whose identity would otherwise commit during the high-sigma structure
+    pass and survive any late damp).
+    "early_linear" runs 1 -> 0 with p (full at high sigma, off at low sigma)
+    — the inverse of "linear" — for experiments that damp during the
+    structure pass only.
     """
     p = min(1.0, max(0.0, float(p)))
     if p < 1e-4:
         return 0.0
+    if schedule == "constant":
+        return 1.0
+    if schedule == "early_linear":
+        return 1.0 - p
+    if schedule == "early_sqrt":
+        return 1.0 - math.sqrt(p)
     if schedule == "linear":
         return p
     if schedule == "sqrt":
@@ -300,7 +314,8 @@ class H3RefBoostChar:
                                "protect_scene ON (rv2v scene pattern), this is "
                                "ignored.",
                 }),
-                "schedule": (["cosine", "linear", "sqrt", "power2", "step"], {
+                "schedule": (["cosine", "linear", "sqrt", "power2", "step",
+                              "constant", "early_linear", "early_sqrt"], {
                     "default": "cosine",
                 }),
                 "step_threshold": ("FLOAT", {

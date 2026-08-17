@@ -295,7 +295,8 @@ class H3RefBoostV:
                                "VALUE. <1.0 weakens the source person so refs "
                                "win; 0.7-0.9 typical. 1.0 = off.",
                 }),
-                "schedule": (["cosine", "linear", "sqrt", "power2", "step"], {
+                "schedule": (["cosine", "linear", "sqrt", "power2", "step",
+                              "constant", "early_linear", "early_sqrt"], {
                     "default": "cosine",
                 }),
                 "step_threshold": ("FLOAT", {
