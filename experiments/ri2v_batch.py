@@ -459,6 +459,11 @@ def main():
     ap.add_argument("--enhance", action="store_true",
                     help="Run the faithful converted workflow (enhancer wired)")
     ap.add_argument("--workflow", default=WORKFLOW)
+    ap.add_argument("--source", default=None,
+                    help="Sweep mode: override the variant's video_ref + "
+                         "aspect_source with this image file (ComfyUI input/"
+                         "relative name), and use the generic sweep prompt "
+                         "experiments/ri2v_prompt_gen.txt")
     args = ap.parse_args()
 
     if args.list:
@@ -479,8 +484,16 @@ def main():
         if args.variant not in VARIANTS:
             raise SystemExit(f"unknown variant {args.variant}")
         cfg = dict(VARIANTS[args.variant])
-        cfg["prompt"] = _load_prompt(cfg["prompt_file"])
-        tag = args.variant
+        if args.source:
+            # sweep mode: swap in the sweep source + generic prompt
+            cfg["video_ref"] = (args.source, 5)
+            cfg["aspect_source"] = args.source
+            cfg["prompt"] = _load_prompt(
+                Path(__file__).parent / "ri2v_prompt_gen.txt")
+            tag = f"{args.variant}-{Path(args.source).stem}"
+        else:
+            cfg["prompt"] = _load_prompt(cfg["prompt_file"])
+            tag = args.variant
 
     run_dir = out_root / f"{tag}_s{args.seed}"
     prefix = f"Ri2vExp/{tag}_{args.seed}"

@@ -1,0 +1,27 @@
+subject_definitions:
+<Subject 1> is a woman in her early 30s of Caucasian/Mediterranean ethnicity with long straight dark brown hair, green eyes, silver septum nose ring, full lips, oval face, slim athletic build with large breasts, extensive black ink tattoos (floral, mandala and geometric patterns covering arms, chest and torso).
+<Picture 1> is the primary reference image defining <Subject 1>'s face, hair, tattoos and upper body.
+<Picture 2> is an additional reference image of <Subject 1> showing rear body, tattoos and lower-body proportions.
+<Picture 3> is an additional reference image of <Subject 1> showing full-body tattoo placement and build.
+<Picture 4> is an additional reference image of <Subject 1> confirming facial features and hair.
+<Video 1> is the 5-frame static source clip showing the scene to animate.
+
+summary:
+[video editing] The target video is an edited version of <Video 1>. <Subject 1> replaces the original woman in the source while preserving the scene structure, framing, camera, body positions and background; the scene is animated naturally as a continuous 10-second clip.
+
+retention_analysis:
+<Video 1> partially_preserved (scene structure, framing, camera, body positions and background fully retained; only the female character is replaced).
+<Subject 1> attribute_transfer (face, hair, body type, tattoos, piercings and proportions transferred onto the original woman's position and motion).
+<Picture 1> attribute_transfer (primary identity source for face and upper body).
+<Picture 2> attribute_transfer (rear and lower-body details).
+<Picture 3> attribute_transfer (full-body tattoo and build reference).
+<Picture 4> attribute_transfer (facial confirmation).
+
+detailed_description:
+The woman in the source is replaced by <Subject 1> with her exact face, hair, tattoos, piercings and body. She moves naturally within the source scene, maintaining seductive eye contact with the viewer. The animation is smooth and continuous with realistic motion matching the source's framing and camera. The male figure (if present) is unchanged.
+
+overall_soundscape:
+Natural ambient sound matching the scene. If speech is present, use short explicit lines. No spoken dialogue unless the scene implies it.
+
+non_diegetic_music:
+N/A
