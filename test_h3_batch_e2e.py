@@ -460,6 +460,41 @@ check("LIST: labels <Picture 1..3> in order",
       == ["<Picture 1>", "<Picture 2>", "<Picture 3>"],
       str(picture_labels(clip_l.ref_items)))
 
+# ── 9. single-frame + content regions (the one-image crash) ────────────────
+print("\n== 9. single-frame + content regions (regression: one-image crash) ==")
+# The real user flow: ONE LoadImage -> H3BatchImages -> content_regions [r0]
+# -> images_batch_regions, with the region list AND the frame list fed through
+# the INPUT_IS_LIST executor (every input wrapped in a 1-element list).
+# Post-unwrap images_batch_regions is [r0] — a 1-element list whose element is
+# itself a 4-tuple. That used to be misread as a *wrapped region list*, making
+# region_list == r0 and crashing on `y0, y1, x0, x1 = region_list[0]` with
+# "cannot unpack non-iterable int object" (region_list[0] is the int y0).
+# Sections 2b/7 pass regions DIRECTLY (no executor wrap) and with 3 frames,
+# so neither the wrap nor the one-frame shape was ever exercised.
+_r0 = (4, 508, 4, 508)
+_one = synthetic_frame((1, 0, 0))
+for _name, _batch, _regs in [
+    # real INPUT_IS_LIST path: executor wraps EVERY input in a 1-element list,
+    # so execute() receives [[frame]] / [[r0]] and _un1 unwraps to [frame]/[r0]
+    ("executor-wrapped", [[_one]], [[_r0]]),
+    # bare-tuple emitter: node outputs (y0, y1, x0, x1) directly
+    ("bare region tuple", [[_one]], _r0),
+]:
+    vae_1, clip_1, refs_1 = run(
+        MiniMaxH3ReferenceToVideoBatch,
+        images_batch=_batch, images_batch_regions=_regs)
+    check(f"SINGLE({_name}): no crash, exactly 1 ref from 1 frame + 1 region",
+          len(refs_1) == 1 and len(vae_1.calls) == 1,
+          f"calls={len(vae_1.calls)} refs={len(refs_1)}")
+    check(f"SINGLE({_name}): labels == ['<Picture 1>']",
+          picture_labels(clip_1.ref_items) == ["<Picture 1>"],
+          str(picture_labels(clip_1.ref_items)))
+    _cropped = _one[:, 4:508, 4:508, :]
+    _exp1 = _resize(_cropped, *match_scale_dims(504, 504), "disabled")
+    check(f"SINGLE({_name}): encode == match-scale of region-cropped content",
+          vae_1.calls[0]["hash"] == tensor_hash(_exp1),
+          f"shape {vae_1.calls[0]['shape']}")
+
 # ── summary ────────────────────────────────────────────────────────────────
 fails = [r for r in RESULTS if not r[1]]
 print(f"\nSUMMARY: {len(RESULTS) - len(fails)}/{len(RESULTS)} checks passed")

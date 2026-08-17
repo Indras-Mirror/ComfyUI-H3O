@@ -130,14 +130,35 @@ class MiniMaxH3ReferenceToVideoBatch(MiniMaxH3ReferenceToVideo):
             # node emits ONE region list for the whole batch, in frame order.
             region_list = None
             if images_batch_regions is not None:
+                # Regions are (y0, y1, x0, x1) 4-tuples of ints; a region LIST
+                # is a list of such tuples. The single-frame case arrives two
+                # ways after the INPUT_IS_LIST unwrap: [r0] (node emitted a
+                # 1-element list, executor wrapped it) or r0 itself (a bare
+                # 4-tuple). Both mean ONE region. The old code misread [r0] as
+                # a *wrapped region list* (region_list became r0 itself), so
+                # `y0, y1, x0, x1 = region_list[i]` unpacked the int y0 —
+                # "cannot unpack non-iterable int object". Disambiguate by
+                # checking the inner item: an element of a region list is
+                # itself a tuple; a region tuple's elements are ints.
                 if (isinstance(images_batch_regions, (list, tuple))
                         and len(images_batch_regions) == 1
-                        and isinstance(images_batch_regions[0], (list, tuple))):
+                        and isinstance(images_batch_regions[0], (list, tuple))
+                        and len(images_batch_regions[0]) > 0
+                        and isinstance(images_batch_regions[0][0],
+                                       (list, tuple))):
+                    # wrapped region list: [[r0, r1, ...]] -> [r0, r1, ...]
                     region_list = images_batch_regions[0]
-                elif isinstance(images_batch_regions, (list, tuple)):
+                elif (isinstance(images_batch_regions, (list, tuple))
+                        and (not images_batch_regions
+                             or isinstance(images_batch_regions[0],
+                                           (list, tuple)))):
+                    # flat region list [r0, r1, ...] — first element is a
+                    # region tuple, so NOT a bare (y0, y1, x0, x1) of ints
                     region_list = images_batch_regions
                 elif hasattr(images_batch_regions, "__len__") \
                         and len(images_batch_regions) == 4:
+                    # bare (y0, y1, x0, x1) tuple/sequence: ONE region, applied
+                    # to every frame
                     region_list = [tuple(images_batch_regions)] * len(frames)
             # find the next free ordinal among existing ref_image_N keys
             used = set()
