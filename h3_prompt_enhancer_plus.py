@@ -68,6 +68,25 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
     @classmethod
     def INPUT_TYPES(cls):
         base = super().INPUT_TYPES()
+        # seed_control restored between seed and context_length — saved
+        # workflows (ri2v VSR chain, character sheets) carry a
+        # 'randomize'/'fixed' value at this position from an older widget
+        # set. Dropping it shifted every saved widget after seed by one
+        # (context_length/chain_conversation/scene_mode landed on the wrong
+        # inputs). Inserting it back realigns existing widgets_values arrays.
+        opt = base["optional"]
+        ordered = {}
+        for k, v in opt.items():
+            ordered[k] = v
+            if k == "seed":
+                ordered["seed_control"] = (["randomize", "fixed"], {
+                    "default": "randomize",
+                    "tooltip": "randomize = send seed=-1 to the LLM backend "
+                               "(fresh output every run, provider-permitting). "
+                               "fixed = honor the seed value above for "
+                               "reproducible output."
+                })
+        base["optional"] = ordered
         base["optional"]["enhanced_rules"] = ("BOOLEAN", {
             "default": True,
             "tooltip": "Inject community-derived dialogue, audio, and "
@@ -129,8 +148,9 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
                      advanced_prompt="on",
                      same_subject=False, style_transfer="off",
                      auto_describe=True, auto_describe_max_tokens=4096,
-                     editing_frame="on", seed=-1, context_length=-1,
-                     chain_conversation="off",
+                     editing_frame="on", seed=-1, seed_control="randomize",
+                     context_length=-1,
+                     chain_conversation="off", scene_mode="hard",
                      enhanced_rules=True):
         # INPUT_IS_LIST unwrap — every input arrives wrapped in a list.
         prompt = self._un1(prompt)
@@ -156,10 +176,16 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         auto_describe_max_tokens = self._un1(auto_describe_max_tokens)
         editing_frame = self._un1(editing_frame)
         seed = self._un1(seed)
+        seed_control = self._un1(seed_control)
         context_length = self._un1(context_length)
         chain_conversation = self._un1(chain_conversation)
         scene_mode = self._un1(scene_mode)
         enhanced_rules = self._un1(enhanced_rules)
+
+        # seed_control: randomize -> fresh seed every run (backend seed=-1);
+        # fixed -> honor the seed value above for reproducible output.
+        if seed_control == "randomize":
+            seed = -1
 
         # images_batch may arrive as a LIST of individual frames (from
         # H3BatchImages 'Refs (list)') or a batched tensor — normalize to a

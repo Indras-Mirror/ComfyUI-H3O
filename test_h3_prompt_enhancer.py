@@ -193,9 +193,9 @@ print("\nri2v (source video + images_batch)")
 cap4 = run_enhance(task_type="ri2v", same_subject=True,
                    images_batch=batch, source_video=src_video)
 t4 = cap4["user_text"]
-check("ri2v uses the proven R2V template (reference-guided)",
-      "reference-guided generation (R2V)" in t4
-      and "RV2V" not in t4.split("Rules for reference mode")[0])
+check("ri2v uses the dedicated RI2V template (reference generation / video editing)",
+      "reference generation / video editing (RI2V)" in t4
+      and "RV2V" not in t4.split("Rules for RI2V reference mode")[0])
 check("ri2v uses the FULL-REFERENCE system prompt (not RV2V)",
       "FULL-REFERENCE" in cap4["system_prompt"]
       and "REFERENCE-IMAGE-AS-VIDEO" not in cap4["system_prompt"])
@@ -221,8 +221,9 @@ check("scene-as-image: 4 images sent to LLM (1 scene + 3 batch)",
       n_images == 4, f"got {n_images}")
 check("scene-as-image: <Picture 1> is SCENE",
       "<Picture 1> provides the SCENE" in t5)
-check("scene-as-image: no <Video 1>",
-      "<Video 1>" not in t5)
+check("scene-as-image: no <Video 1> attached — scene stays <Picture 1>",
+      "A source video (<Video 1>) is attached" not in t5
+      and "[reference generation] with the scene image as <Picture 1>" in t5)
 check("scene-as-image: <Picture 2> defines <Subject 1> (primary view)",
       "<Picture 2>" in t5 and "defines" in t5
       and "<Subject 1>" in t5 and "REPLACEMENT" in t5)
@@ -276,7 +277,7 @@ def run_enhance_plus(task_type="rv2v", same_subject=False, images_batch=None,
 
     h3pe._call_backend = fake_caller
 
-    h3_prompt, sys_prompt, ref_images_out = node.enhance_plus(
+    h3_prompt, sys_prompt, ref_images_out, *_rest = node.enhance_plus(
         prompt="A woman walks into the scene.",
         task_type=task_type,
         duration=5.0,
@@ -810,8 +811,8 @@ base_keys = list(H3PromptEnhancer.INPUT_TYPES()["optional"].keys())
 check("base: chain_conversation is LAST optional widget",
       base_keys[-1] == "chain_conversation", f"last={base_keys[-1]}")
 plus_keys = list(H3PromptEnhancerPlus.INPUT_TYPES()["optional"].keys())
-check("plus: chain_conversation is LAST optional widget (after enhanced_rules)",
-      plus_keys[-1] == "chain_conversation", f"last={plus_keys[-1]}")
+check("plus: scene_mode is LAST optional widget (appended after chain_conversation)",
+      plus_keys[-1] == "scene_mode", f"last={plus_keys[-1]}")
 
 def run_enhance_plus_chain(chain_conversation="on"):
     node = H3PromptEnhancerPlus()
@@ -827,7 +828,7 @@ def run_enhance_plus_chain(chain_conversation="on"):
         return "MOCK OUTPUT"
 
     h3pe._call_backend = fake_caller
-    h3_prompt, sys_prompt, ref_batch = node.enhance_plus(
+    h3_prompt, sys_prompt, ref_batch, *_rest = node.enhance_plus(
         prompt="A woman walks into the scene.",
         task_type="i2v",
         duration=5.0,

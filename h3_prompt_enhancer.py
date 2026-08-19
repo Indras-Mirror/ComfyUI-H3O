@@ -270,17 +270,21 @@ speaker IDs, or any description of what characters do in the scene. No
 This is a transfer directive, not a scene script."""
 
 # SOFT scene-mode rule override: appended after the RI2V rules when
-# scene_mode="soft" — lets the rules describe the act while keeping
-# compliance constraints.
+# scene_mode="soft" — the 2-4-sentence cap becomes a scripted 4-8-beat
+# action sequence matching the frozen-prompt style and video 1's temporal
+# scripting. Keeps the compliance constraints.
 H3_RI2V_SCENE_SOFT_OVERRIDE = """\
 SOFT SCENE MODE (MANDATORY — supersedes the DETAILED_DESCRIPTION OVERRIDE):
-describe what the characters do in the scene — the explicit sexual act
-(positions, penetration, oral, ejaculation, cum, sounds) — in 2-4 concise
-sentences, following the source video's action and motion. Still forbidden:
-shot-by-shot narration, panel-by-panel descriptions, dialogue, timestamps,
-<d> tags, camera motion, speaker IDs, [Shot N] markers, MM:SS.mmm timecodes,
-vocalization descriptions. Never describe the SOURCE video's original
-character's identity — only her actions, replaced by the reference woman."""
+describe what the woman does in the scene as a scripted action sequence of 4-8
+sentences — the explicit sexual act (positions, penetration, oral, ejaculation,
+cum, sounds) following the source video's action and motion, beat by beat in
+temporal order (what happens first, then next, then next). One sentence per
+beat, concrete and physically plausible; describe each beat's motion and
+reaction. Still forbidden: shot-by-shot narration, panel-by-panel
+descriptions, dialogue, timestamps, <d> tags, camera motion, speaker IDs,
+[Shot N] markers, MM:SS.mmm timecodes, vocalization descriptions. Never
+describe the SOURCE video's original character's identity — only her actions,
+replaced by the reference woman."""
 
 _DETAILED_DESC_ORIGINAL = """\
 detailed_description:
@@ -301,22 +305,52 @@ text in English double quotes; punctuation standardized to , . ? !
 Reference labels (<Subject N>, <Picture N>, <Video N>, <Audio N>) at first appearance
 and where roles apply."""
 
-# Compact RI2V replacement — scene composition + identity transfer only.
+# The detailed_description paragraph from the NON-advanced H3_REF_SYSTEM_PROMPT
+# (verbatim). The RI2V override replace below must hit BOTH the advanced and the
+# non-advanced system prompt; with advanced_prompt="off" the base prompt is
+# H3_REF_SYSTEM_PROMPT, whose detailed_description block differs from
+# _DETAILED_DESC_ORIGINAL and would otherwise silently skip the replace and
+# leave the verbose 350-500-word instruction in place.
+_DETAILED_DESC_ORIGINAL_NONADV = """\
+detailed_description:
+The main body — 350-500 words (generation) or scaled to source complexity (editing).
+Style established in 1-2 sentences BEFORE [Shot 1]. No timestamp on [Shot 1].
+Later shots: [Shot N] At MM:SS.mmm. Camera motion as natural English.
+Speakers: <Subject N> (Sx) says: <d>[Language] text</d>. Stable speaker IDs across shots.
+Reference labels (<Subject N>, <Picture N>, <Video N>, <Audio N>) at first appearance and where roles apply.
+<scenetrans> / <cutoff> for dialogue crossing cuts / truncated by video end."""
+
+# RI2V soft replacement — the multi-block TARGET-side verbose form the
+# videos + official guide demand (identity / scene-layout / action / tail).
+# The action block delegates to the SOFT SCENE MODE beat-list rule.
 _DETAILED_DESC_RI2V_SOFT = """\
 detailed_description:
-1-3 concise sentences ONLY. State the source's visual style (manga, anime,
-photorealistic, etc.), the layout and composition being preserved, and that
-the woman from the reference photos replaces the original character —
-transferring her face, body, hair, tattoos, piercings, and distinguishing
-marks into that scene and style. DO describe what the characters do in the scene — the explicit sexual
-act (positions, penetration, oral, ejaculation, cum, sounds) — in 2-4
-concise sentences, following the source video's action and motion. Also
-state the source's visual style, the layout and composition being preserved,
-and that the woman from the reference photos replaces the original character
-(face, body, hair, tattoos, piercings, marks transferred). Do NOT write
-shot-by-shot narration, panel-by-panel descriptions, dialogue, timestamps,
-<d> tags, camera motion, speaker IDs, [Shot N] markers, MM:SS.mmm timecodes,
-or vocalization descriptions. This is a scene + transfer directive."""
+Write the body in FOUR labeled blocks, in this exact order, in English.
+
+[1. IDENTITY BLOCK] 2-3 sentences: <Subject 1> is the woman from the reference
+pictures — her face, body, hair, tattoos, piercings, and distinguishing marks
+are transferred into the scene. The reference pictures are the SOLE source of
+her identity. State the output's visual style (manga, anime, photorealistic,
+3D, watercolor, etc.) and that the woman is rendered in that style; the source
+scene's original character contributes no identity features.
+
+[2. SCENE/LAYOUT BLOCK] 2-4 sentences: describe the preserved source scene —
+setting, layout, composition, framing, props, lighting direction and quality,
+color palette, camera angle. This scene and composition are preserved from the
+source; do not invent a new environment.
+
+[3. ACTION BLOCK] the scripted beat sequence from the SOFT SCENE MODE rule —
+what the woman does in the scene, beat by beat in temporal order, following
+the source video's action and motion.
+
+[4. DIRECTIVE TAIL] 1-2 sentences: maintain realistic human motion and facial
+expressions; body remains consistent; face the camera; begin with the
+preserved framing.
+
+STILL FORBIDDEN: timestamps, [Shot N] markers, MM:SS.mmm timecodes, <d>
+dialogue tags, speaker IDs, camera-motion terms, shot-by-shot cut narration,
+vocalization descriptions, and any description of the SOURCE character's
+identity. Sequential action beats in prose are allowed and required."""
 
 
 # ── RI2I (Reference Image → Image / character sheet) system prompts ────────
@@ -897,6 +931,49 @@ Rules for RV2V reference mode:
 User's raw request:
 {user_prompt}"""
 
+# RI2V dedicated template (reference-image-to-video character swap). The
+# generic H3_REF_TEMPLATE "reference-guided generation (R2V)" label hid the
+# edit/regenerate task split; this template names the RI2V task explicitly
+# and binds scene/preserve + identity/change scoping (per official guide).
+H3_RI2V_TEMPLATE = """\
+Write the H3 full-reference structured prompt (6 fields) for a
+reference-image-to-video generation (RI2V).
+
+Task type: reference generation / video editing (RI2V) — the source video
+(or scene image) provides the scene, layout, composition, visual style, and
+timing; the reference images (<Picture N>) provide the REPLACEMENT character's
+identity.
+Video duration: {duration_seconds}s
+
+{ref_section}
+
+Rules for RI2V reference mode:
+- Task type in summary: [video editing] when a source video is present —
+  begin with "The target video is an edited version of <Video 1>."; otherwise
+  [reference generation] with the scene image as <Picture 1>.
+- <Video 1> / scene <Picture 1> is partially_preserved / fully_preserved —
+  its scene, structure, framing, camera, timing, and background are kept; only
+  the replaced character changes.
+- REMEMBER: the renderer binds identity through the <Picture N> labels only.
+  Always write "<Subject 1> is the person from <Picture N>" — never describe
+  the replacement character without naming the <Picture N> that anchors her.
+- Describe the source SCENE's content in detailed_description (setting, layout,
+  composition, visual style, palette, lighting) — but never the source
+  character's identity.
+- Script the replacement's actions as a sequential beat chain following the
+  source's motion. Use change/preserve scoping: say what is replaced and
+  enumerate what is preserved (performance, camera, timing, environment,
+  lighting, motion).
+- Mark the replacement as attribute_transfer and every <Picture N> as
+  attribute_transfer — never weak_reference. Do NOT name the replaced character
+  as its own subject.
+- detailed_description is the main body — the multi-block form (identity /
+  scene-layout / action / directive tail) per the DETAILED_DESCRIPTION OVERRIDE,
+  or the compact transfer directive when the override says so.
+
+User's raw request:
+{user_prompt}"""
+
 H3_RV2V_SUBJECT_RULES_SEPARATE = """\
 - Each reference image anchors a REPLACEMENT character: "<Subject 1> is the person from
   <Picture 1> with [full appearance — face, hair, body, skin, clothing, distinguishing marks]"
@@ -983,7 +1060,11 @@ content as the identity of a replaced character — it is the scene."""
 # face/body/hair/clothing from reference), picture refs = attribute_transfer,
 # all references STRONG (never weak_reference),
 # source video = partially_preserved, replaced character NOT named as own subject.
-H3_RI2V_RULE = """\
+# Mode-gated: scene_mode="hard" (default) uses the compact transfer directive
+# with NO act paragraph (proven production config); scene_mode="soft" carries
+# the multi-block DETAILED_DESCRIPTION OVERRIDE that delegates the act to the
+# SOFT SCENE MODE beat-list rule. Selected at the append points in enhance().
+H3_RI2V_RULE_HARD = """\
 CHARACTER-SWAP RETENTION (REQUIRED): mark the source video <Video N> as
 partially_preserved — its scene, structure, framing, camera, timing, and background
 are kept, while the character being replaced is swapped out. Mark the REPLACEMENT
@@ -1003,12 +1084,9 @@ concise sentences ONLY. State: (1) the visual style of the source scene
 being preserved from the source, and (3) that the woman from the reference
 photos replaces the original character — her face, body, hair, tattoos,
 piercings, and distinguishing marks are transferred into that scene and
-style. DO describe what the characters do in the scene — the explicit
-sexual act (positions, penetration, oral, ejaculation, cum, sounds) — in
-2-4 concise sentences, following the source video's action and motion. Do
-NOT write shot-by-shot narration, panel-by-panel descriptions, dialogue,
-timestamps, <d> tags, camera motion, speaker IDs, [Shot N] markers, or
-MM:SS.mmm timecodes. Never describe the SOURCE video's original character's
+style. Do NOT write shot-by-shot narration, panel-by-panel descriptions,
+dialogue, timestamps, <d> tags, camera motion, speaker IDs, [Shot N] markers,
+or MM:SS.mmm timecodes. Never describe the SOURCE video's original character's
 identity — only her actions, replaced by the reference woman.
 
 IDENTITY COMMITMENT (REQUIRED in detailed_description): the woman in the
@@ -1022,8 +1100,46 @@ manga, anime, or drawn character, the output character is the real person
 from the reference photos rendered in that visual style, not the drawn
 character with minor changes."""
 
-# RI2V scene-as-image variant: scene comes as <Picture 1> instead of <Video N>
-H3_RI2V_RULE_SCENE_IMAGE = """\
+H3_RI2V_RULE_SOFT = """\
+CHARACTER-SWAP RETENTION (REQUIRED): mark the source video <Video N> as
+partially_preserved — its scene, structure, framing, camera, timing, and background
+are kept, while the character being replaced is swapped out. Mark the REPLACEMENT
+character(s) from the reference pictures as attribute_transfer — transfer the
+face, body, hair style, hair color, skin tone, clothing, and makeup from the
+reference picture onto the character in the video. Describe their full appearance
+in subject_definitions. Mark each reference <Picture N> as attribute_transfer TOO —
+every reference picture is a STRONG identity source; never mark an identity
+picture as weak_reference. Do NOT name the replaced character as its own
+<Subject N> — describe it only as the person being replaced inside <Video N>'s
+definition.
+
+DETAILED_DESCRIPTION OVERRIDE (REQUIRED — supersedes the 350-500 word
+instruction): for this character-swap, write detailed_description as a
+multi-block scene directive (see the SOFT SCENE MODE rule): identity block,
+scene/layout block, action block with the explicit act scripted as sequential
+beats, directive tail. State the source's visual style (manga, anime, 3D,
+photorealistic, etc.) and the layout/composition being preserved; the woman
+from the reference photos replaces the original character — face, body, hair,
+tattoos, piercings, and distinguishing marks transferred into that scene and
+style. Do NOT write shot-by-shot narration, panel-by-panel descriptions,
+dialogue, timestamps, <d> tags, camera motion, speaker IDs, [Shot N] markers,
+or MM:SS.mmm timecodes. Never describe the SOURCE video's original character's
+identity — only her actions, replaced by the reference woman.
+
+IDENTITY COMMITMENT (REQUIRED in detailed_description): the woman in the
+output IS the person from the reference photos — explicitly write that her
+face, body, hair, tattoos, piercings, and distinguishing marks are transferred
+from the reference pictures onto the character in the scene. The source
+provides scene composition, layout, and visual style; the reference photos
+are the SOLE source of the character's physical identity. Do NOT describe the
+output woman using the source's original character — if the source shows a
+manga, anime, or drawn character, the output character is the real person
+from the reference photos rendered in that visual style, not the drawn
+character with minor changes."""
+
+# RI2V scene-as-image variant: scene comes as <Picture 1> instead of <Video N>.
+# Same hard/soft mode-gate as H3_RI2V_RULE_*; hard drops the act paragraph.
+H3_RI2V_RULE_SCENE_IMAGE_HARD = """\
 CHARACTER-SWAP RETENTION (REQUIRED): <Picture 1> provides the scene — mark it
 fully_preserved in retention_analysis (environment, framing, lighting, composition
 all preserved). Mark the REPLACEMENT character(s) from the other reference
@@ -1041,12 +1157,9 @@ from <Picture 1> (manga, anime, 3D, photorealistic, etc.), (2) the layout
 and composition being preserved, and (3) that the woman from the character
 reference photos replaces the original character — her face, body, hair,
 tattoos, piercings, and distinguishing marks are transferred into that scene
-and style. DO describe what the characters do in the scene — the explicit
-sexual act (positions, penetration, oral, ejaculation, cum, sounds) — in
-2-4 concise sentences, following the source video's action and motion. Do
-NOT write shot-by-shot narration, panel-by-panel descriptions, dialogue,
-timestamps, <d> tags, camera motion, speaker IDs, [Shot N] markers, or
-MM:SS.mmm timecodes. Never describe the SOURCE video's original character's
+and style. Do NOT write shot-by-shot narration, panel-by-panel descriptions,
+dialogue, timestamps, <d> tags, camera motion, speaker IDs, [Shot N] markers,
+or MM:SS.mmm timecodes. Never describe the SOURCE video's original character's
 identity — only her actions, replaced by the reference woman.
 
 IDENTITY COMMITMENT (REQUIRED in detailed_description): the woman in the
@@ -1059,6 +1172,77 @@ woman using the source scene's original character — if <Picture 1> shows a
 manga, anime, or drawn character, the output character is the real person
 from the reference photos rendered in that visual style, not the drawn
 character with minor changes."""
+
+H3_RI2V_RULE_SCENE_IMAGE_SOFT = """\
+CHARACTER-SWAP RETENTION (REQUIRED): <Picture 1> provides the scene — mark it
+fully_preserved in retention_analysis (environment, framing, lighting, composition
+all preserved). Mark the REPLACEMENT character(s) from the other reference
+pictures as attribute_transfer — transfer the face, body, hair style, hair color,
+skin tone, clothing, and makeup from the reference picture onto the character in
+the scene. Describe their full appearance in subject_definitions. Mark each
+character reference <Picture N> (N > 1) as attribute_transfer TOO — every
+reference picture is a STRONG identity source; never mark an identity picture as
+weak_reference.
+
+DETAILED_DESCRIPTION OVERRIDE (REQUIRED — supersedes the 350-500 word
+instruction): for this character-swap, write detailed_description as a
+multi-block scene directive (see the SOFT SCENE MODE rule): identity block,
+scene/layout block, action block with the explicit act scripted as sequential
+beats, directive tail. State the source's visual style (manga, anime, 3D,
+photorealistic, etc.) and the layout/composition being preserved; the woman
+from the reference photos replaces the original character — face, body, hair,
+tattoos, piercings, and distinguishing marks transferred into that scene and
+style. Do NOT write shot-by-shot narration, panel-by-panel descriptions,
+dialogue, timestamps, <d> tags, camera motion, speaker IDs, [Shot N] markers,
+or MM:SS.mmm timecodes. Never describe the SOURCE video's original character's
+identity — only her actions, replaced by the reference woman.
+
+IDENTITY COMMITMENT (REQUIRED in detailed_description): the woman in the
+output IS the person from the character reference images — explicitly write
+that her face, body, hair, tattoos, piercings, and distinguishing marks are
+transferred from the reference pictures. <Picture 1> provides scene composition,
+layout, and visual style; the character reference pictures (N > 1) are the
+SOLE source of the character's physical identity. Do NOT describe the output
+woman using the source scene's original character — if <Picture 1> shows a
+manga, anime, or drawn character, the output character is the real person
+from the reference photos rendered in that visual style, not the drawn
+character with minor changes."""
+
+# G5: first-class change/preserve contract for RI2V. The enumerated
+# preserve-list form (per video 5 finding) works better as its own
+# instruction than folded into H3_RI2V_RULE's retention text.
+H3_RI2V_EDIT_DIRECTIVE = """\
+EDIT DIRECTIVE (REQUIRED — first-class instruction):
+WHAT TO CHANGE: the original character in the source is replaced by <Subject 1>,
+the woman from the reference pictures. This is the only change.
+WHAT TO PRESERVE: the source's scene, framing, lighting, camera position, body
+positions, motion, timing, and structure — frame for frame, no new movement,
+none removed. The replacement takes the original character's screen position,
+scale, rotation, path, speed, and timing; occluded parts stay occluded;
+contact follows the source's geometry; the source's depth of field, motion
+blur, key direction, shadow direction and softness carry over; identity from
+the reference pictures holds steady with no drift in shape, color, or markings.
+REFERENCE ROLES: the source video <Video 1> (or scene <Picture 1>) is provided
+for scene, structure, and timing; the reference pictures are provided for
+subject identity and performance. The clearer the change and preserve lists,
+the easier the renderer binds. Do NOT write a new scene."""
+
+# G1: pre-filled reference-character identity scaffold. The node never writes
+# the subject's appearance itself; the write pass must read it from images or
+# the auto_describe JSON. Seed a written identity contract from auto_describe's
+# subject JSON (injected as Context Analysis). Inserted BEFORE the picture-count
+# bound so "EXACTLY N reference image(s)" stays the last ref_section statement.
+H3_RI2V_IDENTITY_SCAFFOLD = """\
+REFERENCE CHARACTER IDENTITY SCAFFOLD (REQUIRED): <Subject 1> is the woman from
+the reference pictures. In subject_definitions, write her complete appearance as
+a checklist from the Context Analysis below — face shape, eye shape and color,
+brows, nose, lips, jawline, hair color/length/style/texture, skin tone, body
+type/build, full clothing inventory (color, fabric, fit), accessories, tattoos,
+scars, piercings, distinguishing marks. In detailed_description, restate her
+appearance in 1-2 sentences at her first appearance in the scene. The reference
+pictures are the SOLE source of her identity; the source scene's original
+character contributes nothing to her appearance. Never describe the output
+woman using the source's original character."""
 
 # Same-subject rule variant when scene is the first ref image
 H3_SAME_SUBJECT_RULE_SCENE_IMAGE = """\
@@ -1755,8 +1939,15 @@ class H3PromptEnhancer:
         if task_type in H3_RI2V_TASK_TYPES:
             ri2v_desc = (_DETAILED_DESC_RI2V_SOFT if scene_mode == "soft"
                          else _DETAILED_DESC_RI2V_HARD)
+            # Replace against BOTH the advanced and the non-advanced
+            # detailed_description paragraphs. Each prompt contains exactly
+            # one of the two (ADV count=1, non-ADV count=0 and vice versa),
+            # so the chained replaces are independent no-ops on the wrong
+            # prompt — the rule-level override carries the enforcement.
             system_prompt = system_prompt.replace(
                 _DETAILED_DESC_ORIGINAL, ri2v_desc)
+            system_prompt = system_prompt.replace(
+                _DETAILED_DESC_ORIGINAL_NONADV, ri2v_desc)
 
         # Local models need explicit NSFW permission. The style prefix is
         # model-aware: JoyCaption (Ollama) is caption-trained and needs the
@@ -1845,6 +2036,15 @@ class H3PromptEnhancer:
                 "describe it only as the person being replaced inside <Video 1>'s "
                 "definition. In retention_analysis mark <Video 1> partially_preserved "
                 "(scene/structure kept, replaced character fully replaced).\n\n")
+            ref_section += (
+                "SOURCE SCENE DESCRIPTION (REQUIRED): in detailed_description, describe the "
+                "preserved source scene's content before scripting any action — the setting "
+                "(location, environment, props), the layout and composition being preserved, "
+                "the visual art style (manga, anime, photorealistic, 3D, watercolor, etc.), "
+                "the color palette, the lighting direction and quality, and the camera "
+                "angle/framing — in 2-4 sentences. Then script the replacement character's "
+                "actions within that preserved scene. Do NOT narrate the original "
+                "character's identity or appearance — only the scene she occupies.\n\n")
         elif source_video is not None and task_type == "rv2v":
             if source_video.dim() == 4:
                 n_frames = source_video.shape[0]
@@ -1996,7 +2196,19 @@ class H3PromptEnhancer:
                             f"'<Subject N> is the setting in <Picture {i + 1}>, "
                             "with...'). In retention_analysis mark it as "
                             "fully_preserved (scene preserved). Do NOT derive "
-                            "any character's identity from this image.\n")
+                            "any character's identity from this image. "
+                            "SOURCE SCENE DESCRIPTION (REQUIRED): in "
+                            "detailed_description, describe the preserved source "
+                            "scene's content before scripting any action — the "
+                            "setting (location, environment, props), the layout "
+                            "and composition being preserved, the visual art "
+                            "style (manga, anime, photorealistic, 3D, watercolor, "
+                            "etc.), the color palette, the lighting direction and "
+                            "quality, and the camera angle/framing — in 2-4 "
+                            "sentences. Then script the replacement character's "
+                            "actions within that preserved scene. Do NOT narrate "
+                            "the original character's identity or appearance — "
+                            "only the scene she occupies.\n")
                     elif same_subject:
                         is_primary = ((not ri2v_scene_as_image and i == 0)
                                       or (ri2v_scene_as_image and i == 1))
@@ -2074,6 +2286,10 @@ class H3PromptEnhancer:
                                     f"(label as Picture {i+1} or Subject {i+1}).\n")
             if ref_images:
                 ref_section += "\n"
+                # G1 identity scaffold: seeds a written identity contract for
+                # the replacement character(s) BEFORE the picture-count bound.
+                if task_type in H3_RI2V_TASK_TYPES:
+                    ref_section += H3_RI2V_IDENTITY_SCAFFOLD + "\n\n"
                 # Hard bound on <Picture N> labels: the renderer binds pictures by
                 # ORDER of the attached refs only — no other picture label exists.
                 # Stops the LLM inventing <Picture 6>, <Picture 9>, etc. when the
@@ -2112,11 +2328,19 @@ class H3PromptEnhancer:
         if task_type in H3_RI2I_TASK_TYPES and has_refs:
             extra_rules.append(H3_RI2I_RULE)
         if task_type in H3_RI2V_TASK_TYPES and has_refs and source_video is not None:
-            extra_rules.append(H3_RI2V_RULE)
+            extra_rules.append(H3_RI2V_RULE_HARD if scene_mode != "soft"
+                               else H3_RI2V_RULE_SOFT)
         elif ri2v_scene_mode:
-            extra_rules.append(H3_RI2V_RULE_SCENE_IMAGE)
+            extra_rules.append(H3_RI2V_RULE_SCENE_IMAGE_HARD
+                               if scene_mode != "soft"
+                               else H3_RI2V_RULE_SCENE_IMAGE_SOFT)
         if scene_mode == "soft" and task_type in H3_RI2V_TASK_TYPES:
             extra_rules.append(H3_RI2V_SCENE_SOFT_OVERRIDE)
+        # G5 change/preserve directive — alongside the mode-gated RI2V rules,
+        # for both the source-video and scene-as-image paths.
+        if (task_type in H3_RI2V_TASK_TYPES and has_refs
+                and (source_video is not None or ri2v_scene_mode)):
+            extra_rules.append(H3_RI2V_EDIT_DIRECTIVE)
         elif (task_type in H3_RV2V_TASK_TYPES and has_refs
               and source_video is not None and not same_subject):
             extra_rules.append(H3_RV2V_SAME_SUBJECT_RULE)
@@ -2227,6 +2451,12 @@ class H3PromptEnhancer:
             )
         elif task_type in H3_RI2I_TASK_TYPES:
             user_text = H3_RI2I_TEMPLATE.format(
+                duration_seconds=f"{duration:.1f}",
+                ref_section=ref_section,
+                user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
+            )
+        elif task_type in H3_RI2V_TASK_TYPES:
+            user_text = H3_RI2V_TEMPLATE.format(
                 duration_seconds=f"{duration:.1f}",
                 ref_section=ref_section,
                 user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
