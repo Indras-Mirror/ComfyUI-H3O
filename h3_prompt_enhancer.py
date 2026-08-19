@@ -147,7 +147,7 @@ Combine with + if multiple apply.
 
 retention_analysis:
 One line per reference label with relationship marker: fully_preserved, partially_preserved, attribute_transfer, weak_reference (for visual/structural), or fully_copy, partially_copy, reference, weak_reference (for audio).
-List which shots each subject appears in.
+List which shots each subject appears in. Format each line as: `<Subject N> (appears in [Shot 1..N]): <marker> - <items>`. Never write negatives or modifiers in subject_definitions or retention_analysis lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed attributes positively in detailed_description or omit them entirely.
 
 detailed_description:
 The main body — 350-500 words (generation) or scaled to source complexity (editing).
@@ -204,7 +204,10 @@ partially_preserved, attribute_transfer, weak_reference (visual/structural), or
 fully_copy, partially_copy, reference, weak_reference (audio). Newly added background
 or plot events are NOT fidelity losses. In character swap every reference picture is
 attribute_transfer — never weak_reference; no picture is "not appearing". List which
-shots each subject appears in.
+shots each subject appears in. Format each line as: `<Subject N> (appears in [Shot 1..N]): <marker> - <items>`. Never write negatives or modifiers in
+subject_definitions or retention_analysis lines (e.g. do not write 'but bald',
+'no hair', 'without X'); state changed attributes positively in detailed_description
+or omit them entirely.
 
 detailed_description:
 The main body — 350-500 words (generation) or scaled to source complexity (editing).
@@ -351,6 +354,24 @@ STILL FORBIDDEN: timestamps, [Shot N] markers, MM:SS.mmm timecodes, <d>
 dialogue tags, speaker IDs, camera-motion terms, shot-by-shot cut narration,
 vocalization descriptions, and any description of the SOURCE character's
 identity. Sequential action beats in prose are allowed and required."""
+
+
+# ── RI2V detailed_description user-message carriers (C4) ───────────────────
+# The system-prompt-level replace of the detailed_description section is
+# PARTIALLY IGNORED by some models (residual scene narration kept); the
+# user-message rules are the authoritative carrier. Mirror the mode's override
+# in tight directive form appended to the RI2V user text.
+H3_RI2V_DESC_DIRECTIVE_HARD = (
+    "No action narration in detailed_description for ri2v — describe "
+    "scene/style/lighting and the target subject only; leave the action to "
+    "summary and retention."
+)
+
+H3_RI2V_DESC_DIRECTIVE_SOFT = (
+    "In detailed_description for ri2v: scene/style/lighting and the target "
+    "subject first, then the SOFT SCENE MODE action beats — no shot-by-shot "
+    "narration, no [Shot N] markers, no timecodes."
+)
 
 
 # ── RI2I (Reference Image → Image / character sheet) system prompts ────────
@@ -661,7 +682,12 @@ H3_RV2V_RETENTION_SEPARATE = (
     "attribute_transfer TOO — every reference picture is a STRONG identity source "
     "whose features must be transferred; never mark an identity picture as "
     "weak_reference. Do NOT name the replaced character as its own <Subject N>; "
-    "describe it only as the person being replaced inside <Video 1>'s definition."
+    "describe it only as the person being replaced inside <Video 1>'s definition. "
+    "Never write negatives or modifiers in subject_definitions or retention_analysis "
+    "lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed "
+    "attributes positively in detailed_description or omit them entirely. Format "
+    "each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): "
+    "<marker> - <items>`."
 )
 
 H3_RV2V_RETENTION_SAME = (
@@ -673,7 +699,12 @@ H3_RV2V_RETENTION_SAME = (
     "attribute_transfer TOO — every reference picture is a STRONG identity source "
     "whose features must be transferred; never mark an identity picture as "
     "weak_reference. Do NOT name the replaced character as its own <Subject N>; "
-    "describe it only as the person being replaced inside <Video 1>'s definition."
+    "describe it only as the person being replaced inside <Video 1>'s definition. "
+    "Never write negatives or modifiers in subject_definitions or retention_analysis "
+    "lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed "
+    "attributes positively in detailed_description or omit them entirely. Format "
+    "each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): "
+    "<marker> - <items>`."
 )
 
 H3_RV2V_RULES_SEPARATE = (
@@ -687,7 +718,12 @@ H3_RV2V_RULES_SEPARATE = (
     "that must reach the render — mark EVERY <Picture N> as attribute_transfer. "
     "There is NO weak_reference in character swap — no picture is 'identity source "
     "only', none is 'not appearing'. If a picture shows a body part, tattoo, or "
-    "outfit detail, that detail is transferred into its <Subject N>'s definition."
+    "outfit detail, that detail is transferred into its <Subject N>'s definition. "
+    "Never write negatives or modifiers in subject_definitions or retention_analysis "
+    "lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed "
+    "attributes positively in detailed_description or omit them entirely. Format "
+    "each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): "
+    "<marker> - <items>`."
 )
 
 H3_RV2V_RULES_SAME = (
@@ -701,7 +737,12 @@ H3_RV2V_RULES_SAME = (
     "that must reach the render — mark EVERY <Picture N> as attribute_transfer. "
     "There is NO weak_reference in character swap — no picture is 'identity source "
     "only', none is 'not appearing'. If a picture shows a body part, tattoo, or "
-    "outfit detail, that detail is transferred into <Subject 1>'s definition."
+    "outfit detail, that detail is transferred into <Subject 1>'s definition. "
+    "Never write negatives or modifiers in subject_definitions or retention_analysis "
+    "lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed "
+    "attributes positively in detailed_description or omit them entirely. Format "
+    "each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): "
+    "<marker> - <items>`."
 )
 
 H3_RV2V_SYSTEM_PROMPT_ADV = """\
@@ -733,7 +774,11 @@ retention_analysis:
 One line per reference label with relationship marker: <Video 1> is partially_preserved
 (scene, framing, lighting, camera preserved; characters listed get replaced or stay).
 {subject_retention}
-List which shots each subject appears in.
+List which shots each subject appears in. Format each line as: `<Subject N>
+(appears in [Shot 1..N]): <marker> - <items>`. Never write negatives or modifiers
+in subject_definitions or retention_analysis lines (e.g. do not write 'but bald',
+'no hair', 'without X'); state changed attributes positively in
+detailed_description or omit them entirely.
 
 detailed_description:
 The main body — 350-500 words. Style established in 1-2 sentences BEFORE [Shot 1].
@@ -967,6 +1012,11 @@ Rules for RI2V reference mode:
 - Mark the replacement as attribute_transfer and every <Picture N> as
   attribute_transfer — never weak_reference. Do NOT name the replaced character
   as its own subject.
+- Never write negatives or modifiers in subject_definitions or retention_analysis
+  lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
+  attributes positively in detailed_description or omit them entirely.
+- Format each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]):
+  <marker> - <items>`.
 - detailed_description is the main body — the multi-block form (identity /
   scene-layout / action / directive tail) per the DETAILED_DESCRIPTION OVERRIDE,
   or the compact transfer directive when the override says so.
@@ -983,7 +1033,12 @@ H3_RV2V_SUBJECT_RULES_SEPARATE = """\
   Mark EVERY <Picture N> as attribute_transfer — every reference picture is a STRONG
   identity source whose features must reach the render. NEVER use weak_reference for a
   character reference picture. Do NOT name the replaced character as its own subject —
-  describe it only inside <Video 1>'s definition."""
+  describe it only inside <Video 1>'s definition.
+- Never write negatives or modifiers in subject_definitions or retention_analysis
+  lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
+  attributes positively in detailed_description or omit them entirely.
+- Format each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]):
+  <marker> - <items>`."""
 
 H3_RV2V_SUBJECT_RULES_SAME = """\
 - ALL reference images show the SAME person (multiple views — face, body, detail).
@@ -996,7 +1051,12 @@ H3_RV2V_SUBJECT_RULES_SAME = """\
   Mark EVERY <Picture N> as attribute_transfer — all reference pictures are STRONG
   identity sources and must feed the transfer. NEVER use weak_reference for a character
   reference picture. Do NOT name the replaced character as its own subject — describe it
-  only inside <Video 1>'s definition."""
+  only inside <Video 1>'s definition.
+- Never write negatives or modifiers in subject_definitions or retention_analysis
+  lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
+  attributes positively in detailed_description or omit them entirely.
+- Format each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]):
+  <marker> - <items>`."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1034,7 +1094,12 @@ identity source whose features MUST reach the target. In retention_analysis mark
 EVERY character reference <Picture N> as attribute_transfer — never weak_reference.
 No picture is "identity source only", "not reproduced as a frame", or "not
 appearing in the scene". When a picture shows a body part, tattoo, clothing, or
-detail, that detail is transferred into the <Subject N> definition it anchors."""
+detail, that detail is transferred into the <Subject N> definition it anchors.
+Never write negatives or modifiers in subject_definitions or retention_analysis
+lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
+attributes positively in detailed_description or omit them entirely. Format each
+retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): <marker> -
+<items>`."""
 
 H3_SAME_SUBJECT_RULE = """\
 SAME SUBJECT: ALL reference images show the SAME person/subject from different
@@ -1044,7 +1109,12 @@ features from every reference into a single subject definition, and never treat
 REFERENCES ARE STRONG: every reference picture feeds the subject's identity —
 mark EVERY <Picture N> as attribute_transfer, never weak_reference. No picture is
 "identity source only" or "not appearing in the scene"; each contributes its
-face/body/outfit details to the unified <Subject 1>."""
+face/body/outfit details to the unified <Subject 1>.
+Never write negatives or modifiers in subject_definitions or retention_analysis
+lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
+attributes positively in detailed_description or omit them entirely. Format each
+retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): <marker> -
+<items>`."""
 
 H3_RV2V_SAME_SUBJECT_RULE = """\
 SCENE/REPLACEMENT RULE: the static reference video (<Video 1>) provides the SCENE —
@@ -1075,7 +1145,11 @@ in subject_definitions. Mark each reference <Picture N> as attribute_transfer TO
 every reference picture is a STRONG identity source; never mark an identity
 picture as weak_reference. Do NOT name the replaced character as its own
 <Subject N> — describe it only as the person being replaced inside <Video N>'s
-definition.
+definition. Never write negatives or modifiers in subject_definitions or
+retention_analysis lines (e.g. do not write 'but bald', 'no hair', 'without X');
+state changed attributes positively in detailed_description or omit them entirely.
+Format each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]):
+<marker> - <items>`.
 
 DETAILED_DESCRIPTION OVERRIDE (REQUIRED — supersedes the 350-500 word
 instruction): for this character-swap, write detailed_description as 1-3
@@ -1111,7 +1185,11 @@ in subject_definitions. Mark each reference <Picture N> as attribute_transfer TO
 every reference picture is a STRONG identity source; never mark an identity
 picture as weak_reference. Do NOT name the replaced character as its own
 <Subject N> — describe it only as the person being replaced inside <Video N>'s
-definition.
+definition. Never write negatives or modifiers in subject_definitions or
+retention_analysis lines (e.g. do not write 'but bald', 'no hair', 'without X');
+state changed attributes positively in detailed_description or omit them entirely.
+Format each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]):
+<marker> - <items>`.
 
 DETAILED_DESCRIPTION OVERRIDE (REQUIRED — supersedes the 350-500 word
 instruction): for this character-swap, write detailed_description as a
@@ -1148,7 +1226,11 @@ skin tone, clothing, and makeup from the reference picture onto the character in
 the scene. Describe their full appearance in subject_definitions. Mark each
 character reference <Picture N> (N > 1) as attribute_transfer TOO — every
 reference picture is a STRONG identity source; never mark an identity picture as
-weak_reference.
+weak_reference. Never write negatives or modifiers in subject_definitions or
+retention_analysis lines (e.g. do not write 'but bald', 'no hair', 'without X');
+state changed attributes positively in detailed_description or omit them entirely.
+Format each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]):
+<marker> - <items>`.
 
 DETAILED_DESCRIPTION OVERRIDE (REQUIRED — supersedes the 350-500 word
 instruction): for this character-swap, write detailed_description as 1-3
@@ -1182,7 +1264,11 @@ skin tone, clothing, and makeup from the reference picture onto the character in
 the scene. Describe their full appearance in subject_definitions. Mark each
 character reference <Picture N> (N > 1) as attribute_transfer TOO — every
 reference picture is a STRONG identity source; never mark an identity picture as
-weak_reference.
+weak_reference. Never write negatives or modifiers in subject_definitions or
+retention_analysis lines (e.g. do not write 'but bald', 'no hair', 'without X');
+state changed attributes positively in detailed_description or omit them entirely.
+Format each retention_analysis line as: `<Subject N> (appears in [Shot 1..N]):
+<marker> - <items>`.
 
 DETAILED_DESCRIPTION OVERRIDE (REQUIRED — supersedes the 350-500 word
 instruction): for this character-swap, write detailed_description as a
@@ -1256,7 +1342,12 @@ image is a view of the same single person.
 REFERENCES ARE STRONG: every character reference picture feeds the subject's
 identity — mark EVERY character <Picture N> as attribute_transfer, never
 weak_reference. No picture is "identity source only" or "not appearing";
-each contributes its face/body/outfit details to the unified <Subject 1>."""
+each contributes its face/body/outfit details to the unified <Subject 1>.
+Never write negatives or modifiers in subject_definitions or retention_analysis
+lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
+attributes positively in detailed_description or omit them entirely. Format each
+retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): <marker> -
+<items>`."""
 
 # RI2I retention recipe — character-sheet identity: every reference picture
 # feeds ONE unified character; the target is a 6-shot turnaround sheet.
@@ -2461,6 +2552,12 @@ class H3PromptEnhancer:
                 ref_section=ref_section,
                 user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
             )
+            # C4: rule-carry the detailed_description override at user-message
+            # level — the system-prompt swap is partially ignored by some
+            # models; the user-message rules are the authoritative carrier.
+            user_text += "\n\n" + (H3_RI2V_DESC_DIRECTIVE_SOFT
+                                   if scene_mode == "soft"
+                                   else H3_RI2V_DESC_DIRECTIVE_HARD)
         else:
             user_text = H3_REF_TEMPLATE.format(
                 duration_seconds=f"{duration:.1f}",
