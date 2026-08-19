@@ -155,7 +155,7 @@ def build_variant(cfg: dict, seed: int, out_prefix: str) -> dict:
     main_inputs = {
         "clip": ["clip", 0], "vae": ["vae", 0], "audio_vae": ["avae", 0],
         "prompt": cfg["prompt"],
-        "length": snap_length(cfg.get("duration", 10.0)),
+        "length": snap_length(cfg.get("duration", 5.0)),
         "ref_image_size": cfg.get("ref_image_size", "max"),
     }
     if cfg.get("aspect_source"):
@@ -291,6 +291,52 @@ def convert_workflow(wf_path: str) -> dict:
                 _put(inputs, name, [str(l[1]), l[2]])
             # else: optional link-only input, unconnected -> omit
         prompt[str(nid)] = {"class_type": n["type"], "inputs": inputs}
+    return prompt
+
+
+def _bypass_enhancer(prompt: dict, text: str) -> dict:
+    """--enhance + --prompt-file: skip the enhancer call, inject <text>.
+
+    The enhancer node (H3PromptEnhancer(Plus)) both generates the prompt and
+    passes the reference batch through ref_images_out. Rewire the main node's
+    images_batch straight to the H3BatchImages refs list, pin the prompt (and
+    the ShowText preview) to <text>, and drop the enhancer — plus any node
+    whose outputs only fed it — from the executed graph.
+    """
+    main = next(k for k, v in prompt.items()
+                if v["class_type"] == "H3ReferenceToVideo")
+    enh = next((k for k, v in prompt.items()
+                if v["class_type"] in ("H3PromptEnhancer",
+                                       "H3PromptEnhancerPlus")), None)
+    if enh is None:
+        raise SystemExit("No enhancer node in workflow — cannot bypass")
+    # the ref batch the enhancer passes through -> repoint images_batch there
+    batch_ref = prompt[enh]["inputs"].get("images_batch")
+    prompt[main]["inputs"]["prompt"] = text
+    if "images_batch" in prompt[main]["inputs"] and batch_ref:
+        prompt[main]["inputs"]["images_batch"] = batch_ref
+    for k, v in prompt.items():
+        if v["class_type"] == "ShowText|pysssss" \
+                and v["inputs"].get("text") == [enh, 0]:
+            v["inputs"]["text"] = text
+    # drop the enhancer + anything whose outputs only fed it
+    consumers = {}
+    for k, v in prompt.items():
+        for ref in v["inputs"].values():
+            if isinstance(ref, list) and ref and isinstance(ref[0], str):
+                consumers.setdefault(ref[0], set()).add(k)
+    dead = {enh}
+    changed = True
+    while changed:
+        changed = False
+        for k, v in prompt.items():
+            if k in dead:
+                continue
+            if consumers.get(k) and consumers[k] <= dead:
+                dead.add(k)
+                changed = True
+    for k in dead:
+        prompt.pop(k, None)
     return prompt
 
 
@@ -464,6 +510,11 @@ def main():
                          "aspect_source with this image file (ComfyUI input/"
                          "relative name), and use the generic sweep prompt "
                          "experiments/ri2v_prompt_gen.txt")
+    ap.add_argument("--prompt-file", default=None,
+                    help="Prompt text override. With --source: replaces the "
+                         "generic sweep prompt. With --enhance: skips the "
+                         "enhancer call and injects this file's text as the "
+                         "workflow prompt.")
     args = ap.parse_args()
 
     if args.list:
@@ -479,6 +530,9 @@ def main():
 
     if args.enhance:
         prompt = convert_workflow(args.workflow)
+        if args.prompt_file:
+            prompt = _bypass_enhancer(
+                prompt, _load_prompt(Path(args.prompt_file)))
         tag = "ENH"
     else:
         if args.variant not in VARIANTS:
@@ -489,7 +543,8 @@ def main():
             cfg["video_ref"] = (args.source, 5)
             cfg["aspect_source"] = args.source
             cfg["prompt"] = _load_prompt(
-                Path(__file__).parent / "ri2v_prompt_gen.txt")
+                Path(args.prompt_file) if args.prompt_file
+                else Path(__file__).parent / "ri2v_prompt_gen.txt")
             tag = f"{args.variant}-{Path(args.source).stem}"
         else:
             cfg["prompt"] = _load_prompt(cfg["prompt_file"])

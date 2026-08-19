@@ -776,6 +776,16 @@ def _spawn_llama_server(defaults, context_length=-1,
             f"service may be holding it; close it or use a different backend.")
 
     # 3. Port free → spawn detached (own session, cwd /tmp, log file).
+    # Free ComfyUI's VRAM first: llama-server is a separate process ComfyUI
+    # cannot see, so its allocation would otherwise collide with the resident
+    # video model (cudaMalloc OOM — Glimmer 30B after an H3 run).
+    try:
+        import comfy.model_management as _mm
+        _mm.unload_all_models()
+        _mm.soft_empty_cache()
+        logging.info("[PromptEnhancer] Unloaded ComfyUI models for llama-server spawn")
+    except Exception as _e:  # never block the spawn on cleanup failures
+        logging.warning(f"[PromptEnhancer] VRAM cleanup skipped: {_e}")
     cmd = _build_llama_cmd(defaults, context_length)
     logging.info(
         f"[PromptEnhancer] Spawning llama-server on port {port}: "

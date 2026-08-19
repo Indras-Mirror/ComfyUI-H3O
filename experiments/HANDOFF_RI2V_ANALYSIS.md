@@ -152,3 +152,105 @@ controls (interrupted).
   block on him; the flash-worker review (reports/2ic-review.md) already
   covered the review role.
 - Amethyst note: `projects/ri2v-ref-consistency-2026-08-17.md`
+
+## 9. PRODUCTION-PATH FINDINGS (2026-08-18 — appended by the conductor)
+
+Supersedes the "any source blocks identity" framing. Full evidence trail:
+`~/.quetza-data/conductor/reports/` (ri2v-sweep-p1/p2-hinges/ctrl/p2-rest,
+ri2v-prod-ab/prod-validate/prod-src00, claude-fix-stack,
+claude-qwen-enhancer, ri2v-g46-test). Read the resume prompt
+(experiments/RESUME_PROMPT.md, v3) for the canonical current state.
+
+### The mechanism (sweep, 10 sources, vision-scored)
+- The refs (4 aliclo photos, ref_repeat=3) are the DEFAULT identity winner:
+  30/30 across photo/drawn/manga/multi-person sources under the generic
+  prompt `ri2v_prompt_gen.txt` (explicit "replace the woman, transfer
+  face/body/hair/tattoos").
+- The ONLY condition that beats them: a B&W manga source whose identity the
+  prompt TEXT anchors (frozen prompt's "<Video 1> / manga linework fully
+  retained" framing) — 4/4 across two different manga pages. Photo/color-drawn
+  sources never override under either prompt.
+- Mechanism = prompt × source-type interaction, not "any source blocks".
+
+### The production failure chain
+- ri2v-prod-ab: prompt form is the identity switch (H2 confirmed; production
+  ref config byte-identical to harness). The enhancer's verbose shot-by-shot
+  scene narration anchors the source identity.
+- ri2v-prod-validate: the tightened compact directive (_DETAILED_DESC_RI2V)
+  still fails identity 2/2 — grok-4.3 PARTIALLY complies (keeps a timestamp,
+  <d> dialogue, scene action).
+- ri2v-prod-src00: node 1049 source_scale 0.8→0.0 = 1/2 seeds (s202 aliclo
+  4/4 both models + layout PASS). Change LEFT in place (workflow NOT
+  git-tracked; backup /tmp/video_minimax_h3_ri2v_VSR.pre-src00.bak).
+- claude-fix-stack: SRC00 + EXACT generic prompt (via the new
+  `_bypass_enhancer` in ri2v_batch.py:297, `--enhance --prompt-file`) =
+  identity aliclo 4/4 BOTH models ALL 4 seeds (seed sensitivity RESOLVED),
+  but layout FAIL 3/4 (scene dropped — trivial win).
+
+### The candidate full fix (UNTESTED stack)
+- SRC00 + a COMPLIANT prompt (identity commitment + style/layout anchor, no
+  character narration). grok-4.6 (x-ai/grok-4.6) IS COMPLIANT (ri2v-g46-test:
+  zero [Shot N]/MM:SS/<d>/speaker IDs; 3-sentence transfer directive; prompt
+  saved /tmp/ri2v-prodfix/G46_enh.prompt.txt). Qwen 3.8 already wired
+  (`llamacpp/qwen3.8-heretic-ara`, h3o_shared.py:77); compliance test
+  deferred (needs VRAM free).
+- Next experiment: production path + SRC00 + G46 prompt, 4 seeds — packet
+  staged at ~/.quetza-data/conductor/packets/ri2v-g46-validate.md.
+- In-flight at shutdown: ri2v-scene-props (re-dispatched on the amended
+  packet — user's 14-image pool ONLY; the first worker ran non-pool images
+  and was killed).
+
+## 10. FULL-FIX VERDICT + MASK DIRECTION (2026-08-18 late — appended by the conductor)
+
+### The full-fix validation (ri2v-g46-validate3 — clean, on the USER'S POOL)
+Production config: enhancer **x-ai/grok-4.6** (live, deterministic compliant prompts) + **SRC00** + **duration=5** + **turbo ref2v 4-step** (steps=4) → ~2 min/run.
+- **Identity WORKS** (2/4 runs perfect 4A aliclo; all strong) — the seed-sensitivity problem is solved.
+- **Layout source-dependent** — simple medium-wide (zxc 23.jpg): identity 4A + layout 4PASS on seed 202 (perfect); complex low-angle (xzcsarwq.jpg): layout lost on a seed. SRC00 zeroes the source's layout anchor; the prompt alone describes simple scenes better.
+- Two prior attempts were invalidated by an avert_src pin-up leftover (the rogue scene-props worker) — the lesson: **verify the video-ref source in the QUEUED payload (curl /queue), not the saved JSON**. The hardened four-layer verification (saved-JSON edit → queued-payload check → montage RMSE → prompt compliance) worked.
+
+### The mask direction (community-validated)
+Reddit r/StableDiffusion "Get miniMax character swap working! Finally" (2026-08-18):
+- "Use Sam3 to blur/mask the person and that problem goes away" (similar-looking subjects) — confirms `ri2v-source-mask` (in flight): mask the woman out of the source → source_scale back to 0.8 → refs win identity with full layout anchoring.
+- Subject-as-concept prompt structure (PropagandaOfTheDude): `<Subject 1>` = ref face (attribute_transfer), `<Subject 2>` = source person (weak_reference), `<Subject 3>` = clothing (fully_preserved), per-subject retention_analysis → fixes partial merges + clothing confusion. Prompts: omnifit.io/blog/ref2va-what-works-what-fails.
+- Bigger visual difference = cleaner swap; prominent clothing distracts; steps 20 for inference (ours: 4 with turbo).
+
+### New workflow files (user-provided, mask-wiring candidates)
+`/home/mal/Downloads/minimaxH3Character_v20SolAttnTurbo.json`, `/home/mal/Downloads/video_minimax_h3_r2v_addguides_v1.json`, `/home/mal/Downloads/minimaxH3InfiniteVideoRef2va12Img_v10.json`. LightX2V turbo loras: models/loras/LightxV2-V2.0-T2V/ (T2V high/low noise — ref2v turbo in use is Kijai's 4-step).
+
+### Current config state (workflow JSON, NOT git-tracked)
+node 1049 source_scale=0.0 · node 1113 video-ref LoadImage (restored to 0112.jpg after runs — next slice repoints to pool/masked) · node 129 RandomNoise (restored 949448543631237) · node 132 duration=5 · node 124 steps=4 · node 1022 turbo=on. Backups: /tmp/video_minimax_h3_ri2v_VSR.pre-src00.bak, .pre-speed.bak.
+Uncommitted: ri2v_batch.py (_bypass_enhancer + duration), h3_prompt_enhancer.py (IDENTITY COMMITMENT + _DETAILED_DESC_RI2V + model list), 2 prompt txts.
+Fleet health: flash workers die 2-16 min in ("running stop hook" — 4+ occurrences); claude workers stable — prefer claude for critical slices; STATE.md partial-progress discipline for flash slices.
+
+## 11. MASK SLICE + FULL-WIN CONFIG (2026-08-18 evening — appended by the conductor)
+
+### The mask (ri2v-source-mask, conductor-verified)
+Person mask on the source ref video (woman out, feathered) + source_scale 0.8 → **layout FIXED (4P everywhere, ~16/16 frames)** — previously the SRC00 trade-off (identity 4/4 but layout FAIL 3/4). Identity 2A-3A (body/tattoos transfer; FACE markers — septum ring, cheek mole, green eyes — never render). Tested 5 face strategies (~22 runs): black-hole mask, feathered mask, face-only mask, close-up face-crop ref, face+refs — no face breakthrough. The earlier claude worker's "4A identity" claim did NOT reproduce under the conductor rubric (1A-2A on face markers).
+
+### THE FULL WIN (identity + layout simultaneously)
+**Comic source (xmen02.jpg) + masked ref video + source_scale 0.5 + generic transfer prompt (experiments/ri2v_prompt_gen.txt via --prompt-file bypass) + NO char boost → seed 202: IDENTITY 4A/3A/4A/4A, LAYOUT 4P×4.**
+- s101 same config: identity 4A×3, layout 3P/3P/2P → seed sensitivity persists (see ri2v-seeds-research.md, pro worker in flight).
+- source_scale semantics (h3_refboost_char.py:208-211): `src_scale = 1.0 + (source_scale - 1.0) * eff` — 1.0 undamped, 0.0 SRC00, crossover near 0.5.
+- Mechanism: comic source = bigger visual difference = cleaner swap; generic prompt transfer directive = refs win identity; 0.5 = layout anchor without identity recommit; boost nodes irrelevant.
+
+### Standalone workflows (DELIVERABLES, converter-verified + smoke-tested)
+- `video_minimax_h3_ri2v_VSR_mask.json` — in-graph GD-SAM person mask chain (1113 → GroundingDinoSAMSegment "person" → MaskBlur+ → Blur-composite → H3ImageToRefVideo 1207 → 1060 ref_videos.ref_video_0); unmasked source still feeds the enhancer.
+- `..._mask_face.json` (face-only mask variant) · `..._mask_inject.json` (custom_system_prompt face-transfer rules from ri2v-templates-research.md — UNTESTED, generic-prompt bypass won).
+
+### Config for the winning run (per-run)
+1113 = comic source · 1049 source_scale=0.5, enabled=False (no boost) · --prompt-file experiments/ri2v_prompt_gen.txt (drops enhancer) · node 129 seed=202 · duration 5 · steps 4 · turbo ref2v. Harness: run_variants.py (SCALE/no_boost/prompt_file envs) at /tmp/ri2v-source-mask/.
+
+### Batch 4 in flight
+Generalization of the winning formula: xmen-enma-frost.jpg, Xman.jpg, xzcsarwq.jpg × s202.
+
+### Master state
+Master workflow untouched (71 nodes; node 129 restored 949448543631237; node 1113 0112.jpg). Backups: /tmp/video_minimax_h3_ri2v_VSR.pre-src00.bak, .pre-speed.bak, .pre-mask.bak.
+
+### ⛔ HARD RULE (user, 2026-08-18)
+NSFW content NEVER opened/rendered/viewed/displayed on Mal's PC — headless only (scores, numpy/PIL, API vision). In QUETZA.md + CLAUDE.md + Letta.
+
+## 12. WORKFLOW-EDIT RULE (2026-08-18 — user-reported bug + fix)
+Hand-built workflow JSONs from this session left `last_link_id`/`last_node_id` stale (563 vs actual 572 / 1137 vs 1207) → the ComfyUI frontend's next connection collided with the mask-chain link IDs and wired itself randomly, breaking the workflow for the user. FIXED: all `video_minimax_h3_ri2v_VSR_mask*.json` now carry correct counters + no duplicate IDs (verified) + the mask chain is laid out visibly. RULE for future scripted workflow edits: always bump both counters to the actual maxes and json.load-verify. Fixer: /tmp/ri2v-source-mask/fix_workflows.py.
+
+## 13. LOCAL-ENHANCER OOM FIX (2026-08-18 late)
+Symptom: video gen succeeds (444s), then the local llama-server enhancer (Muse-Glimmer 30B) OOMs at spawn — cudaMalloc 14752 MiB failed. Cause: ComfyUI caches MiniMaxH3 (~20GB) across queues; llama-server is a separate process ComfyUI cannot see, so it never unloads for it. Qwen would OOM identically — timing/cache dependent, not model-specific. FIX (applied): h3o_shared.py `_spawn_llama_server` now calls `comfy.model_management.unload_all_models()` + `soft_empty_cache()` before Popen (h3o_shared.py:778). Needs ComfyUI restart to load. Workaround without restart: API enhancer (grok-4.6, local_backend off).

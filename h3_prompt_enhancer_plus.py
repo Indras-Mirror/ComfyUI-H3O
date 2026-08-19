@@ -83,6 +83,16 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         # middle widget would shift that value onto chain_conversation.
         cc = base["optional"].pop("chain_conversation")
         base["optional"]["chain_conversation"] = cc
+        # scene_mode appended LAST — inserting a widget in the middle would
+        # shift saved workflows' widgets_values onto the wrong inputs.
+        base["optional"]["scene_mode"] = ("COMBO", {
+            "default": "hard",
+            "options": ["hard", "soft"],
+            "tooltip": "hard: compact transfer directive (identity + style + "
+                       "layout only, no scene/act description). soft: also "
+                       "describe the explicit sexual act from the source "
+                       "video in the final prompt."
+        })
         return base
 
     RETURN_TYPES = ("STRING", "STRING", "IMAGE",
@@ -148,6 +158,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         seed = self._un1(seed)
         context_length = self._un1(context_length)
         chain_conversation = self._un1(chain_conversation)
+        scene_mode = self._un1(scene_mode)
         enhanced_rules = self._un1(enhanced_rules)
 
         # images_batch may arrive as a LIST of individual frames (from
@@ -240,6 +251,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
             seed=seed,
             context_length=context_length,
             chain_conversation=chain_conversation,
+            scene_mode=scene_mode,
         )
 
         # ref_images_out — a LIST of individual [1,H,W,C] images in <Picture N>
