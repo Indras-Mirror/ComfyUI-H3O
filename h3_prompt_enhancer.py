@@ -1364,7 +1364,38 @@ shots of the same character on the same plain backdrop with identical
 clothing and details, no scene changes, no extra characters, no camera
 movement. In summary begin with: [reference generation]. When the user's
 request names ONE view as a single still image, apply this identity rule to
-that single view only — no multi-shot sequence, no cut timestamps."""
+that single view only — no multi-shot sequence, no cut timestamps.
+Never write negatives or modifiers in subject_definitions or retention_analysis
+lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
+attributes positively in detailed_description or omit them entirely. Format each
+retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): <marker> -
+<items>`."""
+
+H3_RI2I_RULE_SCENE_IMAGE = """\
+CHARACTER-SHEET SCENE RULE (REQUIRED): <Picture 1> provides the SCENE/BACKDROP
+for the turnaround sheet — mark it fully_preserved in retention_analysis
+(environment, setting, framing, lighting, composition, palette all preserved).
+The scene image is NOT an identity source: never derive the character's
+appearance from <Picture 1>, never merge it into <Subject 1>. The remaining
+reference images (<Picture 2>, ...) show the SAME single character — merge
+every view into ONE <Subject 1>; never split them into separate people. Mark
+<Subject 1> and EVERY character <Picture N> (N > 1) as attribute_transfer
+(strong identity sources; never weak_reference). The six-shot turnaround
+happens IN the scene from <Picture 1>: full-body front, face close-up, left
+profile, right profile, back view, final expression shot — locked-off static
+shots of the character within that scene, the scene's environment, props,
+lighting, and palette preserved across all six shots, identical clothing and
+details, no camera movement. The scene from <Picture 1> REPLACES the default
+plain neutral grey studio backdrop entirely — keep the scene's own lighting
+direction and palette instead of the "even neutral lighting" default. In
+summary begin with: [reference generation]. When the user's request names ONE
+view as a single still image, apply this identity rule to that single view
+only — no multi-shot sequence, no cut timestamps.
+Never write negatives or modifiers in subject_definitions or retention_analysis
+lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
+attributes positively in detailed_description or omit them entirely. Format each
+retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): <marker> -
+<items>`."""
 
 # Style transfer — references are a REAL person, but the target video is rendered
 # in a non-photorealistic art style. Instructs the LLM to keep identity-defining
@@ -2190,8 +2221,11 @@ class H3PromptEnhancer:
             # RI2V scene-as-image: source_image becomes the scene (<Picture 1>),
             # prepended before character ref images so numbering aligns with
             # the H3RefToVid node (where the same image wires to ref_image_0).
-            if (task_type == "ri2v" and source_image is not None
-                    and source_video is None):
+            # RI2I/RI2I_MULTI: same scene-as-image support — the character-sheet
+            # turnaround renders IN the scene instead of the default studio
+            # backdrop (scene = source_image, characters = batch/ref slots).
+            if (task_type in ("ri2v", "ri2i", "ri2i_multi")
+                    and source_image is not None and source_video is None):
                 scene_img = (source_image[0] if source_image.dim() == 4
                              else source_image)
                 ref_images.append(scene_img)
@@ -2346,7 +2380,23 @@ class H3PromptEnhancer:
                             "as attribute_transfer (strong identity source; never "
                             "weak_reference).\n")
                 elif task_type in ("ri2i", "ri2i_multi"):
-                    if same_subject or i == 0:
+                    ri2i_scene_as_image = (source_video is None
+                                           and source_image is not None)
+                    if ri2i_scene_as_image and i == 0:
+                        role_list.append(
+                            f"reference image <Picture {i + 1}> — SCENE "
+                            "(environment, backdrop, framing, lighting)")
+                        ref_section += (
+                            f"Reference image <Picture {i + 1}> provides the "
+                            "SCENE/BACKDROP for the character turnaround sheet — "
+                            "the environment, setting, framing, lighting, and "
+                            "composition. The character appears IN this scene across "
+                            "all six shots; the scene's environment, layout, palette, "
+                            "and lighting are preserved. In retention_analysis mark it "
+                            "as fully_preserved (scene preserved). Do NOT derive any "
+                            "character's identity from this image — it is the backdrop, "
+                            "not the subject.\n")
+                    elif same_subject or i == (1 if ri2i_scene_as_image else 0):
                         role_list.append(
                             f"reference image <Picture {i + 1}> defining the character's "
                             "full appearance (identity source for the turnaround sheet)")
@@ -2411,13 +2461,17 @@ class H3PromptEnhancer:
         ri2v_scene_mode = (task_type in H3_RI2V_TASK_TYPES
                            and source_video is None
                            and source_image is not None and has_refs)
+        ri2i_scene_mode = (task_type in H3_RI2I_TASK_TYPES
+                           and source_video is None
+                           and source_image is not None and has_refs)
         if same_subject and has_refs:
-            if ri2v_scene_mode:
+            if ri2v_scene_mode or ri2i_scene_mode:
                 extra_rules.append(H3_SAME_SUBJECT_RULE_SCENE_IMAGE)
             else:
                 extra_rules.append(H3_SAME_SUBJECT_RULE)
         if task_type in H3_RI2I_TASK_TYPES and has_refs:
-            extra_rules.append(H3_RI2I_RULE)
+            extra_rules.append(H3_RI2I_RULE_SCENE_IMAGE
+                               if ri2i_scene_mode else H3_RI2I_RULE)
         if task_type in H3_RI2V_TASK_TYPES and has_refs and source_video is not None:
             extra_rules.append(H3_RI2V_RULE_HARD if scene_mode != "soft"
                                else H3_RI2V_RULE_SOFT)

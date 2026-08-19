@@ -298,6 +298,90 @@ def run_enhance_plus(task_type="rv2v", same_subject=False, images_batch=None,
     return captured
 
 
+# ── 6b. ri2i scene-as-image — source_image = scene, batch = character ──────
+print("\nri2i scene-as-image (source_image + images_batch, same_subject=True)")
+cap_ri2i = run_enhance(task_type="ri2i", same_subject=True,
+                       images_batch=batch, source_video=None,
+                       source_image=scene_img)
+t_ri2i = cap_ri2i["user_text"]
+n_ri2i = sum(1 for c in cap_ri2i["content"] if c.get("type") == "image_url")
+check("ri2i scene: 4 images sent (1 scene + 3 batch)", n_ri2i == 4,
+      f"got {n_ri2i}")
+check("ri2i scene: <Picture 1> is SCENE/BACKDROP",
+      "<Picture 1> provides the SCENE/BACKDROP" in t_ri2i)
+check("ri2i scene: scene NOT an identity source",
+      "Do NOT derive any character's identity from this image" in t_ri2i)
+check("ri2i scene: <Picture 2> defines the character (primary view)",
+      "<Picture 2> is attached and defines the character" in t_ri2i)
+check("ri2i scene: <Picture 3> still character (same_subject merges all)",
+      "<Picture 3> is attached and defines the character" in t_ri2i)
+check("ri2i scene: scene rule present",
+      "CHARACTER-SHEET SCENE RULE" in t_ri2i)
+check("ri2i scene: scene fully_preserved, character attribute_transfer",
+      "fully_preserved" in t_ri2i and "attribute_transfer" in t_ri2i)
+check("ri2i scene: no-negatives rule in ri2i rule",
+      "Never write negatives or modifiers" in t_ri2i)
+
+print("ri2i scene-as-image, same_subject=False")
+cap_ri2i_sep = run_enhance(task_type="ri2i", same_subject=False,
+                           images_batch=batch, source_video=None,
+                           source_image=scene_img)
+t_ri2i_sep = cap_ri2i_sep["user_text"]
+check("ri2i scene separate: <Picture 1> is SCENE/BACKDROP",
+      "<Picture 1> provides the SCENE/BACKDROP" in t_ri2i_sep)
+check("ri2i scene separate: <Picture 2> primary character view",
+      "<Picture 2> is attached and defines the character" in t_ri2i_sep)
+check("ri2i scene separate: <Picture 3> is ADDITIONAL VIEW",
+      "Reference image <Picture 3> is an ADDITIONAL VIEW" in t_ri2i_sep)
+
+print("\nri2i NO scene (regression — old behavior kept)")
+cap_ri2i_n = run_enhance(task_type="ri2i", same_subject=True,
+                         images_batch=batch, source_video=None,
+                         source_image=None)
+t_ri2i_n = cap_ri2i_n["user_text"]
+n_ri2i_n = sum(1 for c in cap_ri2i_n["content"] if c.get("type") == "image_url")
+check("ri2i no-scene: 3 images sent", n_ri2i_n == 3, f"got {n_ri2i_n}")
+check("ri2i no-scene: <Picture 1> defines the character",
+      "<Picture 1> is attached and defines the character" in t_ri2i_n)
+check("ri2i no-scene: base rule, no scene rule",
+      "CHARACTER-SHEET RULE" in t_ri2i_n
+      and "CHARACTER-SHEET SCENE RULE" not in t_ri2i_n)
+
+print("\nri2i_multi scene-as-image (source_image + images_batch)")
+cap_ri2im = run_enhance(task_type="ri2i_multi", same_subject=True,
+                        images_batch=batch, source_video=None,
+                        source_image=scene_img)
+t_ri2im = cap_ri2im["user_text"]
+n_ri2im = sum(1 for c in cap_ri2im["content"] if c.get("type") == "image_url")
+check("ri2i_multi scene: 4 images sent", n_ri2im == 4, f"got {n_ri2im}")
+check("ri2i_multi scene: <Picture 1> is SCENE/BACKDROP",
+      "<Picture 1> provides the SCENE/BACKDROP" in t_ri2im)
+check("ri2i_multi scene: scene rule present",
+      "CHARACTER-SHEET SCENE RULE" in t_ri2im)
+
+print("\nPlus node: ref_images_out scene-first for ri2i")
+cap_plus_ri2i = run_enhance_plus(task_type="ri2i", same_subject=True,
+                                 images_batch=batch, source_video=None,
+                                 source_image=scene_img)
+ro = cap_plus_ri2i["ref_images_out"]
+check("plus ri2i scene: ref_images_out has 4 entries", len(ro) == 4,
+      f"got {len(ro)}")
+check("plus ri2i scene: first entry is the scene (matches source_image)",
+      ro[0] is not None and tuple(ro[0].shape) == tuple(scene_img.shape),
+      f"shape {tuple(ro[0].shape) if ro else None} vs {tuple(scene_img.shape)}")
+check("plus ri2i scene: entries 2-4 are the batch frames",
+      len(ro) == 4 and tuple(ro[1].shape) == tuple(batch[0].unsqueeze(0).shape)
+      and tuple(ro[3].shape) == tuple(batch[2].unsqueeze(0).shape))
+
+print("\nPlus node: ref_images_out WITHOUT scene (regression)")
+cap_plus_ri2i_n = run_enhance_plus(task_type="ri2i", same_subject=True,
+                                   images_batch=batch, source_video=None,
+                                   source_image=None)
+ro_n = cap_plus_ri2i_n["ref_images_out"]
+check("plus ri2i no-scene: ref_images_out has 3 entries", len(ro_n) == 3,
+      f"got {len(ro_n)}")
+
+
 # 7a. Plus with enhanced rules ON
 cap7 = run_enhance_plus(task_type="rv2v", same_subject=True,
                         images_batch=batch, source_video=src_video,
