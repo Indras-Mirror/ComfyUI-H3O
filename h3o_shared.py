@@ -44,7 +44,7 @@ OPENROUTER_MODEL_OUTPUT_CAPS = {
 }
 
 
-def _resolve_generation_budget(context_length, output_cap=16384):
+def _resolve_generation_budget(context_length, output_cap=32768):
     """context_length as the generation-budget CEILING (refinement #2).
 
     Returns the ceiling max_tokens for a single LLM call: auto (-1/0) →
@@ -96,7 +96,7 @@ LOCAL_MODEL_DEFAULTS = {
             "--chat-template-file", "/home/mal/.config/quetza/templates/qwen3.8-froggeric-v22.jinja",
             "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.0",
             "--presence-penalty", "1.5", "--repeat-penalty", "1.0",
-            "-n", "8192", "--seed", "3407",
+            "-n", "32768", "--seed", "3407",
             "--chat-template-kwargs", '{"enable_thinking":false}',
         ],
     },
@@ -119,10 +119,10 @@ LOCAL_MODEL_DEFAULTS = {
             "--parallel", "1", "-b", "4096", "-ub", "32",
             "-ctk", "tbq4_0", "-ctv", "tbq4_0",
             "--no-warmup", "--jinja",
-            "--reasoning", "on", "--reasoning-preserve",
+            "--reasoning", "on",
             "--temp", "0.6", "--top-p", "0.9", "--top-k", "20", "--min-p", "0.0",
             "--repeat-penalty", "1.0",
-            "-n", "16384", "--seed", "3407",
+            "-n", "32768", "--seed", "3407",
         ],
     },
 }
@@ -438,6 +438,14 @@ def _parse_rewritten_text(text):
     """
     if not text:
         return text
+    # Strip reasoning/thinking blocks BEFORE extraction — thinking models
+    # (glimmer --reasoning, qwen enable_thinking) can leak reasoning into the
+    # content; it must never reach the final prompt. Covers llama.cpp's
+    # <reasoning> markers and qwen's <think> (incl. 干-prefixed) markers.
+    stripped = re.sub(
+        r"<reasoning>.*?</reasoning>|<think>.*?</think>|干think.*?干/think>|干reasoning.*?干/reasoning>",
+        "", text, flags=re.DOTALL)
+    text = stripped
     try:
         parsed = json.loads(text)
         return parsed.get("rewritten_text", text)

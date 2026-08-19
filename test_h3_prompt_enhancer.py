@@ -687,10 +687,10 @@ print("\ngeneration budget ceiling (llamacpp + ollama)")
 cap12e = run_enhance_local(local_backend="llamacpp/qwen3.8-heretic-ara",
                            task_type="i2v", source_image=img,
                            auto_describe=True, context_length=-1)
-check("llamacpp auto: write budget 16384 (min(ctx, 16384))",
-      cap12e["max_tokens"] == 16384, f"write={cap12e['max_tokens']}")
-check("llamacpp auto: analyze budget also 16384",
-      cap12e["budgets"] == [16384, 16384], f"budgets={cap12e['budgets']}")
+check("llamacpp auto: write budget 32768 (min(ctx, 32768))",
+      cap12e["max_tokens"] == 32768, f"write={cap12e['max_tokens']}")
+check("llamacpp auto: analyze budget also 32768",
+      cap12e["budgets"] == [32768, 32768], f"budgets={cap12e['budgets']}")
 cap12f = run_enhance_local(local_backend="ollama/joycaption", task_type="i2v",
                            source_image=img, auto_describe=True, seed=7)
 check("ollama: budget unchanged (4096 widget, no ceiling)",

@@ -1893,7 +1893,7 @@ class H3PromptEnhancer:
         # truncation (grok etc. were capped at 4096) without breaking saved
         # workflows — the widget budgets stay as floors. Ollama is untouched.
         if backend == "llamacpp":
-            gen_ceiling = _resolve_generation_budget(context_length, 16384)
+            gen_ceiling = _resolve_generation_budget(context_length, 32768)
         elif backend == "openrouter":
             model_cap = OPENROUTER_MODEL_OUTPUT_CAPS.get(llm_model, 16384)
             gen_ceiling = _resolve_generation_budget(context_length, model_cap)
@@ -2507,6 +2507,8 @@ class H3PromptEnhancer:
             _unload_ollama_model(backend_url, backend_model)
 
         # ── Return ────────────────────────────────────────────────────────
+        logging.info("[H3PromptEnhancer] FINAL PROMPT (task_type=%s backend=%s):\n%s",
+                     task_type, backend, raw_output)
         return (raw_output, system_prompt,)
 
 
