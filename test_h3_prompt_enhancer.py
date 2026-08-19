@@ -381,6 +381,69 @@ ro_n = cap_plus_ri2i_n["ref_images_out"]
 check("plus ri2i no-scene: ref_images_out has 3 entries", len(ro_n) == 3,
       f"got {len(ro_n)}")
 
+# ── 6c. rv2v scene-as-image — source_image = scene (no source_video) ───────
+print("\nrv2v scene-as-image (source_image + images_batch, same_subject=True)")
+cap_rv2v = run_enhance(task_type="rv2v", same_subject=True,
+                       images_batch=batch, source_video=None,
+                       source_image=scene_img)
+t_rv2v = cap_rv2v["user_text"]
+n_rv2v = sum(1 for c in cap_rv2v["content"] if c.get("type") == "image_url")
+check("rv2v scene: 4 images sent (1 scene + 3 batch)", n_rv2v == 4,
+      f"got {n_rv2v}")
+check("rv2v scene: <Picture 1> is SCENE",
+      "<Picture 1> provides the SCENE" in t_rv2v)
+check("rv2v scene: no <Video 1> mention in ref section",
+      "<Video 1>" not in t_rv2v)
+check("rv2v scene: <Picture 2> defines <Subject 1> (primary view)",
+      "<Picture 2> is attached and defines" in t_rv2v and "<Subject 1>" in t_rv2v)
+check("rv2v scene: scene from <Picture 1>'s",
+      "<Picture 1>'s" in t_rv2v and "scene" in t_rv2v)
+check("rv2v scene: scene rule present (reuses ri2v scene-image rule)",
+      "CHARACTER-SWAP RETENTION" in t_rv2v)
+check("rv2v scene: fully_preserved + attribute_transfer",
+      "fully_preserved" in t_rv2v and "attribute_transfer" in t_rv2v)
+
+print("\nrv2v scene-as-image, same_subject=False")
+cap_rv2v_sep = run_enhance(task_type="rv2v", same_subject=False,
+                           images_batch=batch, source_video=None,
+                           source_image=scene_img)
+t_rv2v_sep = cap_rv2v_sep["user_text"]
+check("rv2v scene separate: <Picture 1> is SCENE",
+      "<Picture 1> provides the SCENE" in t_rv2v_sep)
+check("rv2v scene separate: <Picture 2> → <Subject 1>",
+      "<Subject 1>" in t_rv2v_sep and "<Picture 2>" in t_rv2v_sep)
+check("rv2v scene separate: <Picture 3> → <Subject 2>",
+      "<Subject 2>" in t_rv2v_sep and "<Picture 3>" in t_rv2v_sep)
+check("rv2v scene separate: scene from <Picture 1>'s",
+      "<Picture 1>'s" in t_rv2v_sep and "scene" in t_rv2v_sep)
+
+print("\nrv2v WITH source_video (regression — video-scene path unchanged)")
+cap_rv2v_vid = run_enhance(task_type="rv2v", same_subject=True,
+                           images_batch=batch, source_video=src_video,
+                           source_image=None)
+t_rv2v_vid = cap_rv2v_vid["user_text"]
+check("rv2v video: scene still from <Video 1>",
+      "<Video 1>" in t_rv2v_vid)
+check("rv2v video: no scene-image SCENE branch",
+      "<Picture 1> provides the SCENE" not in t_rv2v_vid)
+
+print("\nPlus node: ref_images_out scene-first for rv2v")
+cap_plus_rv2v = run_enhance_plus(task_type="rv2v", same_subject=True,
+                                 images_batch=batch, source_video=None,
+                                 source_image=scene_img)
+ro_r = cap_plus_rv2v["ref_images_out"]
+check("plus rv2v scene: ref_images_out has 4 entries", len(ro_r) == 4,
+      f"got {len(ro_r)}")
+check("plus rv2v scene: first entry is the scene",
+      tuple(ro_r[0].shape) == tuple(scene_img.shape),
+      f"shape {tuple(ro_r[0].shape) if ro_r else None}")
+cap_plus_rv2v_n = run_enhance_plus(task_type="rv2v", same_subject=True,
+                                   images_batch=batch, source_video=None,
+                                   source_image=None)
+check("plus rv2v no-scene: ref_images_out has 3 entries",
+      len(cap_plus_rv2v_n["ref_images_out"]) == 3,
+      f"got {len(cap_plus_rv2v_n['ref_images_out'])}")
+
 
 # 7a. Plus with enhanced rules ON
 cap7 = run_enhance_plus(task_type="rv2v", same_subject=True,

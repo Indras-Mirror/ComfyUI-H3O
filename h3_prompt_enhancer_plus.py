@@ -200,11 +200,11 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         # number them as <Picture N>
         ref_images_ordered = []
 
-        # Scene-as-image: source_image becomes <Picture 1> (ri2v scene mode;
-        # ri2i/ri2i_multi character sheet IN the scene). Numbering must match
-        # enhance() so ref_images_out aligns with the H3RefToVid node where
-        # the same scene image wires to ref_image_0.
-        ri2v_scene_as_image = (task_type in ("ri2v", "ri2i", "ri2i_multi")
+        # Scene-as-image: source_image becomes <Picture 1> (rv2v ref-image
+        # scene mode, ri2v scene mode, ri2i/ri2i_multi character sheet IN the
+        # scene). Numbering must match enhance() so ref_images_out aligns with
+        # the H3RefToVid node where the same scene image wires to ref_image_0.
+        ri2v_scene_as_image = (task_type in ("rv2v", "ri2v", "ri2i", "ri2i_multi")
                                and source_image is not None
                                and source_video is None)
         if ri2v_scene_as_image:

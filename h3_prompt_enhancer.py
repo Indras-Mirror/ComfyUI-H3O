@@ -2218,13 +2218,12 @@ class H3PromptEnhancer:
         # conditioning — only the prompt text reaches the model).
         if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi"):
             ref_images = []
-            # RI2V scene-as-image: source_image becomes the scene (<Picture 1>),
+            # Scene-as-image: source_image becomes the scene (<Picture 1>),
             # prepended before character ref images so numbering aligns with
             # the H3RefToVid node (where the same image wires to ref_image_0).
-            # RI2I/RI2I_MULTI: same scene-as-image support — the character-sheet
-            # turnaround renders IN the scene instead of the default studio
-            # backdrop (scene = source_image, characters = batch/ref slots).
-            if (task_type in ("ri2v", "ri2i", "ri2i_multi")
+            # Applies to rv2v (ref-image scene mode), ri2v (scene-as-image),
+            # and ri2i/ri2i_multi (character sheet IN the scene).
+            if (task_type in ("rv2v", "ri2v", "ri2i", "ri2i_multi")
                     and source_image is not None and source_video is None):
                 scene_img = (source_image[0] if source_image.dim() == 4
                              else source_image)
@@ -2261,11 +2260,41 @@ class H3PromptEnhancer:
                         "frame anchor (Picture 1) shows the ORIGINAL character being "
                         "replaced.\n")
                 elif task_type == "rv2v":
-                    if same_subject:
+                    rv2v_scene_as_image = (source_video is None
+                                           and source_image is not None)
+                    scene_label = ("<Picture 1>'s" if rv2v_scene_as_image
+                                   else "<Video 1>'s")
+                    if rv2v_scene_as_image and i == 0:
+                        role_list.append(
+                            f"reference image <Picture {i + 1}> — SCENE "
+                            "(environment, framing, lighting)")
+                        ref_section += (
+                            f"Reference image <Picture {i + 1}> provides the SCENE — "
+                            "the environment, setting, framing, lighting, and "
+                            "composition for the target video. Define it as a "
+                            "scene/environment in subject_definitions (e.g. "
+                            f"'<Subject N> is the setting in <Picture {i + 1}>, "
+                            "with...'). In retention_analysis mark it as "
+                            "fully_preserved (scene preserved). Do NOT derive "
+                            "any character's identity from this image. "
+                            "SOURCE SCENE DESCRIPTION (REQUIRED): in "
+                            "detailed_description, describe the preserved source "
+                            "scene's content before scripting any action — the "
+                            "setting (location, environment, props), the layout "
+                            "and composition being preserved, the visual art "
+                            "style (manga, anime, photorealistic, 3D, watercolor, "
+                            "etc.), the color palette, the lighting direction and "
+                            "quality, and the camera angle/framing — in 2-4 "
+                            "sentences. Then script the replacement character's "
+                            "actions within that preserved scene. Do NOT narrate "
+                            "the original character's identity or appearance — "
+                            "only the scene she occupies.\n")
+                    elif same_subject:
                         # All ref images are ONE person (multiple views: face,
-                        # body, details). <Picture 1> is the primary view; the
-                        # rest are additional views feeding the SAME <Subject 1>.
-                        if i == 0:
+                        # body, details). The first character view is the primary;
+                        # the rest are additional views feeding the SAME <Subject 1>.
+                        is_primary = i == (1 if rv2v_scene_as_image else 0)
+                        if is_primary:
                             role_list.append(
                                 f"reference image <Picture {i + 1}> defining <Subject 1> "
                                 "(the ONE unified person; other images are extra views)")
@@ -2279,7 +2308,9 @@ class H3PromptEnhancer:
                                 "SAME person — merge their features into <Subject 1>, never "
                                 "create new subjects. In retention_analysis mark <Subject 1> "
                                 "and EVERY <Picture N> as attribute_transfer (strong identity "
-                                "sources; never weak_reference).\n")
+                                f"sources; never weak_reference). The scene, "
+                                f"framing, lighting, and camera come from {scene_label} "
+                                "scene.\n")
                         else:
                             role_list.append(
                                 f"reference image <Picture {i + 1}> (additional view of "
@@ -2293,19 +2324,21 @@ class H3PromptEnhancer:
                                 "tattoos, build, hair back-view, etc.). Do NOT create a new "
                                 "subject.\n")
                     else:
+                        subj_n = i + 1 if not rv2v_scene_as_image else i
                         role_list.append(
-                            f"reference image <Picture {i + 1}> defining <Subject {i + 1}> "
-                            "(REPLACEMENT character into <Video 1>'s scene)")
+                            f"reference image <Picture {i + 1}> defining <Subject {subj_n}> "
+                            f"(REPLACEMENT character into {scene_label} scene)")
                         ref_section += (
                             f"Reference image <Picture {i + 1}> is attached and defines "
-                            f"<Subject {i + 1}> — the REPLACEMENT character to swap into "
-                            f"<Video 1>'s scene. Describe <Subject {i + 1}>'s full "
+                            f"<Subject {subj_n}> — the REPLACEMENT character to swap into "
+                            f"{scene_label} scene. Describe <Subject {subj_n}>'s full "
                             f"appearance from <Picture {i + 1}>: face shape, eyes, hair "
                             "color/style, body type, skin tone, clothing, and distinguishing "
                             "marks. In retention_analysis mark <Subject "
-                            f"{i + 1}> AND <Picture {i + 1}> as attribute_transfer (strong "
-                            "identity source; never weak_reference). The scene, "
-                            "framing, lighting, and camera come from <Video 1>.\n")
+                            f"{subj_n}> AND <Picture {i + 1}> as attribute_transfer (strong "
+                            f"identity source; never weak_reference). The scene, "
+                            f"framing, lighting, and camera come from {scene_label} "
+                            "scene.\n")
                 elif task_type == "ri2v":
                     ri2v_scene_as_image = (source_video is None
                                            and source_image is not None)
@@ -2464,8 +2497,12 @@ class H3PromptEnhancer:
         ri2i_scene_mode = (task_type in H3_RI2I_TASK_TYPES
                            and source_video is None
                            and source_image is not None and has_refs)
+        rv2v_scene_mode = (task_type in H3_RV2V_TASK_TYPES
+                           and source_video is None
+                           and source_image is not None and has_refs)
+        any_scene_mode = ri2v_scene_mode or ri2i_scene_mode or rv2v_scene_mode
         if same_subject and has_refs:
-            if ri2v_scene_mode or ri2i_scene_mode:
+            if any_scene_mode:
                 extra_rules.append(H3_SAME_SUBJECT_RULE_SCENE_IMAGE)
             else:
                 extra_rules.append(H3_SAME_SUBJECT_RULE)
@@ -2475,11 +2512,14 @@ class H3PromptEnhancer:
         if task_type in H3_RI2V_TASK_TYPES and has_refs and source_video is not None:
             extra_rules.append(H3_RI2V_RULE_HARD if scene_mode != "soft"
                                else H3_RI2V_RULE_SOFT)
-        elif ri2v_scene_mode:
+        elif ri2v_scene_mode or rv2v_scene_mode:
+            # rv2v scene-as-image reuses the ri2v scene-image rule: identical
+            # mechanics (scene fully_preserved, characters attribute_transfer).
             extra_rules.append(H3_RI2V_RULE_SCENE_IMAGE_HARD
                                if scene_mode != "soft"
                                else H3_RI2V_RULE_SCENE_IMAGE_SOFT)
-        if scene_mode == "soft" and task_type in H3_RI2V_TASK_TYPES:
+        if scene_mode == "soft" and (task_type in H3_RI2V_TASK_TYPES
+                                     or task_type in H3_RV2V_TASK_TYPES):
             extra_rules.append(H3_RI2V_SCENE_SOFT_OVERRIDE)
         # G5 change/preserve directive — alongside the mode-gated RI2V rules,
         # for both the source-video and scene-as-image paths.
@@ -2588,6 +2628,33 @@ class H3PromptEnhancer:
                 subject_mode_rules=rv2v_subject_rules,
                 user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
             )
+            if source_video is None and source_image is not None:
+                # Scene-as-image mode: the scene comes from <Picture 1>, not a
+                # <Video 1>. Swap the scene-source phrases in the formatted
+                # template + subject rules (both templates share identical
+                # scene lines; each replace is a no-op if the text drifts).
+                user_text = user_text.replace(
+                    "the static reference video (<Video 1>) provides\nthe SCENE; the "
+                    "reference images (<Picture 1>, <Picture 2>, ...) provide the "
+                    "REPLACEMENT characters.",
+                    "the scene image (<Picture 1>) provides\nthe SCENE; the reference "
+                    "images (<Picture 2>, <Picture 3>, ...) provide the REPLACEMENT "
+                    "characters.")
+                user_text = user_text.replace(
+                    "<Video 1> is a STATIC scene reference: all frames show the same "
+                    "fixed shot — its setting,\n  framing, lighting, background, and "
+                    "camera are the target video's scene.",
+                    "<Picture 1> is the SCENE reference: its setting,\n  framing, "
+                    "lighting, background, and composition are the target video's "
+                    "scene.")
+                user_text = user_text.replace(
+                    "In retention_analysis mark <Video 1> as partially_preserved "
+                    "(scene/framing/lighting kept).",
+                    "In retention_analysis mark <Picture 1> as fully_preserved "
+                    "(scene/framing/lighting kept).")
+                user_text = user_text.replace(
+                    "only inside <Video 1>'s definition.",
+                    "only inside <Picture 1>'s definition.")
         elif task_type == "ri2i_multi":
             user_text = H3_RI2I_MULTI_TEMPLATE.format(
                 duration_seconds=f"{duration:.1f}",
