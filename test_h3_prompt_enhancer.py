@@ -1069,4 +1069,59 @@ try:
 finally:
     h3o_mod.urllib.request.urlopen = _old_urlopen
 
+# ── 15. ref-mode teaching upgrades: camera vocab + no-quotes + multi-subject ─
+print("\nref-mode teaching upgrades (camera vocab / no-quotes / multi-subject)")
+
+# A. Camera vocabulary is now taught in EVERY ref-mode prompt, not just base.
+cap15 = run_enhance(task_type="r2v", same_subject=False,
+                    images_batch=batch, source_video=None)
+check("A: r2v ADV system prompt teaches camera vocabulary",
+      "Camera vocabulary: Zoom In/Out" in cap15["system_prompt"]
+      and "Dolly In/Out" in cap15["system_prompt"]
+      and "Push In/Pull Out" in cap15["system_prompt"]
+      and "Roll Clockwise/Counterclockwise" in cap15["system_prompt"])
+check("A: rv2v system prompt teaches camera vocabulary (format slots intact)",
+      "Camera vocabulary:" in cap["system_prompt"]
+      and "Truck Left/Right" in cap["system_prompt"])
+check("A: all five ref-mode strings share the vocabulary",
+      "Camera vocabulary:" in h3pe.H3_REF_SYSTEM_PROMPT
+      and "Camera vocabulary:" in h3pe.H3_REF_SYSTEM_PROMPT_ADV
+      and "Camera vocabulary:" in h3pe.H3_RV2V_SYSTEM_PROMPT_ADV
+      and "Camera vocabulary:" in h3pe._DETAILED_DESC_ORIGINAL
+      and "Camera vocabulary:" in h3pe._DETAILED_DESC_ORIGINAL_NONADV)
+check("A: RI2V verbatim-match blocks still match the prompts (replace hits)",
+      h3pe._DETAILED_DESC_ORIGINAL in h3pe.H3_REF_SYSTEM_PROMPT_ADV
+      and h3pe._DETAILED_DESC_ORIGINAL_NONADV in h3pe.H3_REF_SYSTEM_PROMPT)
+check("A: base-mode prompt vocabulary block untouched",
+      "Dolly" not in h3pe.H3_BASE_SYSTEM_PROMPT_ADV
+      and "Camera motion as natural English with motion type + amplitude + speed"
+      in h3pe.H3_BASE_SYSTEM_PROMPT_ADV)
+check("A: ri2v override still replaces the verbose block (vocab consumed)",
+      "1-3 concise sentences" in cap4["system_prompt"]
+      and "350-500" not in cap4["system_prompt"]
+      and "Camera vocabulary:" not in cap4["system_prompt"])
+
+# B. No double quotes inside <d></d> — enhanced dialogue rules.
+cap15b = run_enhance_plus(task_type="rv2v", same_subject=True,
+                          images_batch=batch, source_video=src_video,
+                          enhanced_rules=True)
+check("B: enhanced rules forbid double quotes inside <d></d>",
+      "Never wrap spoken dialogue in double quotes inside <d>" in cap15b["returned_system_prompt"]
+      and "<d>[English] Let it go!</d>" in cap15b["returned_system_prompt"]
+      and "gibberish speech" in cap15b["returned_system_prompt"])
+check("B: enhanced_rules=False keeps the original system prompt (no new rule)",
+      "Never wrap spoken dialogue in double quotes inside <d>"
+      not in cap7b["returned_system_prompt"])
+
+# C. Multiple subjects from ONE reference picture — teaching present.
+check("C: r2v system prompt teaches multi-subject extraction",
+      "A single reference picture may contain multiple subjects" in cap15["system_prompt"]
+      and "'<Subject 1> is the woman from <Picture 1>'" in cap15["system_prompt"]
+      and "Lock EACH with its own" in cap15["system_prompt"]
+      and "retention_analysis line" in cap15["system_prompt"])
+check("C: rv2v system prompt teaches multi-subject extraction",
+      "A single reference picture may contain multiple subjects" in cap["system_prompt"])
+check("C: H3_REF_STRONG_RULE allows multi-subject extraction",
+      "may contain multiple subjects" in h3pe.H3_REF_STRONG_RULE)
+
 print(f"\nALL {PASS} CHECKS PASSED")

@@ -26,6 +26,9 @@ ENHANCED DIALOGUE RULES:
   exact short line and assign it explicitly to a named speaker:
   <Subject N> (Sx) says clearly: <d>[English] Exact dialogue here.</d>
 - Keep dialogue short for 5-7 second clips — one or two brief lines maximum.
+- Never wrap spoken dialogue in double quotes inside <d></d>: write the words
+  bare — <d>[English] Let it go!</d> — never <d>[English] "Let it go!"</d>.
+  Quotes inside <d> cause gibberish speech.
 - Avoid overlapping speech unless specifically requested.
 - If there is NO dialogue, explicitly state:
   "No spoken dialogue. Characters communicate through facial expressions

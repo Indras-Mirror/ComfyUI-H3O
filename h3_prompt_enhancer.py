@@ -127,6 +127,20 @@ Rules:
 Return ONLY the three fields as plain text — no JSON wrapper, no extra commentary."""
 
 
+# Shared camera vocabulary for the FULL-REFERENCE mode prompts. The base-mode
+# prompt (H3_BASE_SYSTEM_PROMPT_ADV) carries this vocabulary inline; the
+# ref-mode prompts only say "Camera motion as natural English", so this block
+# is appended at each ref-mode camera-motion site (REF, REF_ADV, RV2V_ADV, and
+# the _DETAILED_DESC_ORIGINAL/_NONADV verbatim blocks the RI2V replace matches).
+H3_CAMERA_VOCAB_RULE = (
+    "Camera vocabulary: Zoom In/Out, Push In/Pull Out, Pan Left/Right, Truck "
+    "Left/Right, Tilt Up/Down, Pedestal Up/Down, Dolly In/Out, Crane Up/Down, "
+    "Arc Shot, Tracking Shot, Static Shot, Shake Slightly/Strongly, POV, Roll "
+    "Clockwise/Counterclockwise. Describe motion as type + amplitude + speed, "
+    'e.g. "The camera pushes in with small amplitude at slow speed."'
+)
+
+
 H3_REF_SYSTEM_PROMPT = """\
 You are a Creative Assistant for MiniMax H3 video generation in FULL-REFERENCE mode.
 Given the user's raw request and reference-media descriptions, write the complete
@@ -139,6 +153,10 @@ subject_definitions:
 <Picture N> is ... (reference images used as frame anchors or storyboards)
 <Video N> is ... (reference videos providing source/continuation/structure)
 <Audio N> is ... (audio assets: voice timbre, BGM, SFX)
+A single reference picture may contain multiple subjects: define each as its
+own <Subject N>, e.g. '<Subject 1> is the woman from <Picture 1>' and
+'<Subject 2> is the man from <Picture 1>'. Lock EACH with its own
+retention_analysis line.
 
 summary:
 [task-type prefix] One short paragraph summarizing the target video and reference relationships.
@@ -153,6 +171,7 @@ detailed_description:
 The main body — 350-500 words (generation) or scaled to source complexity (editing).
 Style established in 1-2 sentences BEFORE [Shot 1]. No timestamp on [Shot 1].
 Later shots: [Shot N] At MM:SS.mmm. Camera motion as natural English.
+""" + H3_CAMERA_VOCAB_RULE + """
 Speakers: <Subject N> (Sx) says: <d>[Language] text</d>. Stable speaker IDs across shots.
 Reference labels (<Subject N>, <Picture N>, <Video N>, <Audio N>) at first appearance and where roles apply.
 <scenetrans> / <cutoff> for dialogue crossing cuts / truncated by video end.
@@ -190,6 +209,10 @@ objects, scenes, clothing, styles). <Picture N> is ... (reference images used as
 anchors or storyboards). <Video N> is ... (source/continuation/structure). <Audio N> is
 ... (voice timbre, BGM, SFX). If an audio clip maps to a target
 speaker, bind the global ID: "<Audio 1> is the voice-timbre reference for <Subject 1> (S1)."
+A single reference picture may contain multiple subjects: define each as its
+own <Subject N>, e.g. '<Subject 1> is the woman from <Picture 1>' and
+'<Subject 2> is the man from <Picture 1>'. Lock EACH with its own
+retention_analysis line.
 
 summary:
 [task-type prefix] ONE short paragraph summarizing the target video and reference
@@ -214,7 +237,7 @@ The main body — 350-500 words (generation) or scaled to source complexity (edi
 Style established in 1-2 sentences BEFORE [Shot 1]. No timestamp on [Shot 1]. Later
 shots: "[Shot N] At MM:SS.mmm, the camera cuts to ..." with strictly increasing cut
 times within the target duration; prefer camera motion over a cut for slight changes.
-Camera motion as natural English (type + amplitude + speed). Speakers: <Subject N>
+Camera motion as natural English (type + amplitude + speed). """ + H3_CAMERA_VOCAB_RULE + """ Speakers: <Subject N>
 (Sx) with stable global speaker IDs across shots; compound (S1,S2) for group speech;
 identity established outside the tag; dialogue verbatim inside
 <d>[Language] actual words.</d>. ANY vocalization (groans, moans, laughter, screams,
@@ -307,7 +330,7 @@ The main body — 350-500 words (generation) or scaled to source complexity (edi
 Style established in 1-2 sentences BEFORE [Shot 1]. No timestamp on [Shot 1]. Later
 shots: "[Shot N] At MM:SS.mmm, the camera cuts to ..." with strictly increasing cut
 times within the target duration; prefer camera motion over a cut for slight changes.
-Camera motion as natural English (type + amplitude + speed). Speakers: <Subject N>
+Camera motion as natural English (type + amplitude + speed). """ + H3_CAMERA_VOCAB_RULE + """ Speakers: <Subject N>
 (Sx) with stable global speaker IDs across shots; compound (S1,S2) for group speech;
 identity established outside the tag; dialogue verbatim inside
 <d>[Language] actual words.</d>. ANY vocalization (groans, moans, laughter, screams,
@@ -331,6 +354,7 @@ detailed_description:
 The main body — 350-500 words (generation) or scaled to source complexity (editing).
 Style established in 1-2 sentences BEFORE [Shot 1]. No timestamp on [Shot 1].
 Later shots: [Shot N] At MM:SS.mmm. Camera motion as natural English.
+""" + H3_CAMERA_VOCAB_RULE + """
 Speakers: <Subject N> (Sx) says: <d>[Language] text</d>. Stable speaker IDs across shots.
 Reference labels (<Subject N>, <Picture N>, <Video N>, <Audio N>) at first appearance and where roles apply.
 <scenetrans> / <cutoff> for dialogue crossing cuts / truncated by video end."""
@@ -934,6 +958,10 @@ One line per label. <Video 1> is ... (the static scene reference clip — its se
 framing, lighting, and unchanged characters are the target video's scene).
 {subject_defs}
 <Audio N> is ... (audio assets if provided).
+A single reference picture may contain multiple subjects: define each as its
+own <Subject N>, e.g. '<Subject 1> is the woman from <Picture 1>' and
+'<Subject 2> is the man from <Picture 1>'. Lock EACH with its own
+retention_analysis line.
 
 summary:
 [reference generation] ONE short paragraph: the target video keeps <Video 1>'s scene
@@ -954,7 +982,7 @@ detailed_description:
 The main body — 350-500 words. Style established in 1-2 sentences BEFORE [Shot 1].
 No timestamp on [Shot 1]. Later shots: "[Shot N] At MM:SS.mmm, the camera cuts to ..."
 with strictly increasing cut times within the target duration; prefer camera motion over a cut
-for slight changes. Camera motion as natural English (type + amplitude + speed). Speakers:
+for slight changes. Camera motion as natural English (type + amplitude + speed). """ + H3_CAMERA_VOCAB_RULE + """ Speakers:
 <Subject N> (Sx) with stable global speaker IDs across shots; compound (S1,S2) for group
 speech; identity established outside the tag; dialogue verbatim inside
 <d>[Language] actual words.</d>. ANY vocalization (groans, moans, laughter, screams,
@@ -1301,7 +1329,10 @@ Never write negatives or modifiers in subject_definitions or retention_analysis
 lines (e.g. do not write 'but bald', 'no hair', 'without X'); state changed
 attributes positively in detailed_description or omit them entirely. Format each
 retention_analysis line as: `<Subject N> (appears in [Shot 1..N]): <marker> -
-<items>`."""
+<items>`. A single reference picture may contain multiple subjects — extract
+each as its own <Subject N> ('<Subject 1> is the woman from <Picture 1>',
+'<Subject 2> is the man from <Picture 1>') and lock EACH with its own
+retention_analysis line."""
 
 H3_SAME_SUBJECT_RULE = """\
 SAME SUBJECT: ALL reference images show the SAME person/subject from different
