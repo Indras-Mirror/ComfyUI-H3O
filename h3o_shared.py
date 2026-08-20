@@ -100,6 +100,36 @@ LOCAL_MODEL_DEFAULTS = {
             "--chat-template-kwargs", '{"enable_thinking":false}',
         ],
     },
+    # Aggressive variant of the same Qwen3.8 base (HauhauCS uncensored
+    # Q4_K_P main / IQ4_XS --fast). TEST wrapper ~/.local/bin/qwen3.8-quetza-agg
+    # (port 8099), same stack: TBQ4 KV, embedded MTP, native 262K. mmproj
+    # still the heretic Q8_0 projector (same base model — see wrapper note).
+    "llamacpp/qwen3.8-aggressive": {
+        "label": "Qwen3.8-27B Aggressive HauhauCS (llama.cpp) 17.9GB",
+        "backend": "llamacpp",
+        "llama_url": "http://127.0.0.1:8099",
+        "llama_model": "Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf",
+        "llama_bin": "/home/mal/AI/llama.cpp-mtp-fixes/build/bin/llama-server",
+        "llama_model_path": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf",
+        "llama_fallback_model": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-IQ4_XS.gguf",
+        "llama_mmproj_path": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-heretic-ara.mmproj-Q8_0.gguf",
+        "llama_ctx": 262144,      # wrapper default
+        "llama_ctx_max": 262144,  # native model max (no YaRN)
+        "llama_log": "/tmp/h3o-llamacpp-8099.log",
+        "llama_flags": [
+            "--flash-attn", "on", "-t", "12", "--poll", "0", "-ngl", "99",
+            "--parallel", "1", "-b", "4096", "-ub", "32",
+            "-ctk", "tbq4_0", "-ctv", "tbq4_0",
+            "--spec-type", "draft-mtp", "--spec-draft-n-max", "3",
+            "-ctkd", "tbq4_0", "-ctvd", "tbq4_0",
+            "--no-warmup", "--jinja",
+            "--chat-template-file", "/home/mal/.config/quetza/templates/qwen3.8-froggeric-v22.jinja",
+            "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.0",
+            "--presence-penalty", "1.5", "--repeat-penalty", "1.0",
+            "-n", "32768", "--seed", "3407",
+            "--chat-template-kwargs", '{"enable_thinking":false}',
+        ],
+    },
     "llamacpp/muse-glimmer": {
         "label": "Muse-Glimmer-30B heretic (llama.cpp) 16.2GB",
         "backend": "llamacpp",

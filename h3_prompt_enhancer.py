@@ -1661,14 +1661,16 @@ class H3PromptEnhancer:
                 ),
                 "local_backend": (
                     ["off", "ollama/joycaption",
-                     "llamacpp/qwen3.8-heretic-ara", "llamacpp/muse-glimmer"],
+                     "llamacpp/qwen3.8-heretic-ara", "llamacpp/muse-glimmer",
+                     "llamacpp/qwen3.8-aggressive"],
                     {"default": "off",
                      "tooltip": "Use a LOCAL model instead of OpenRouter. "
                                 "ollama/joycaption = JoyCaption Beta One via "
                                 "Ollama (7.5GB). llamacpp/* = on-demand llama-server "
                                 "spawn, VRAM freed after each run: "
-                                "qwen3.8-heretic-ara (16.8GB) or muse-glimmer "
-                                "(16.2GB)."}
+                                "qwen3.8-heretic-ara (16.8GB), muse-glimmer "
+                                "(16.2GB) or qwen3.8-aggressive "
+                                "(HauhauCS uncensored, 17.9GB)."}
                 ),
             },
             "optional": {
