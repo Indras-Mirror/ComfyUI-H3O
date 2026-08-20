@@ -15,6 +15,7 @@ from .h3_image_to_ref_video import H3ImageToRefVideo
 from .h3_refboost_char import H3RefBoostChar
 from .h3_refboost_v import H3RefBoostV
 from .h3_ref_to_video_batch import MiniMaxH3ReferenceToVideoBatch
+from .h3_embed_cache import H3EmbedCache
 from .h3_ref_budget import H3RefBudget
 from .h3_batch_images import H3BatchImages
 from .h3_tae_preview import H3TAEPreview
@@ -32,6 +33,7 @@ NODE_CLASS_MAPPINGS = {
     # Sibling of the official node: adds the images_batch input.
     # (Same-ID override is blocked by ComfyUI's ignore set.)
     "H3ReferenceToVideo": MiniMaxH3ReferenceToVideoBatch,
+    "H3EmbedCache": H3EmbedCache,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -45,6 +47,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "H3BatchImages": "H3 Batch Images (no crop)",
     "H3TAEPreview": "H3 TAE Preview",
     "H3ReferenceToVideo": "MiniMax H3 Reference to Video (Batch)",
+    "H3EmbedCache": "H3 Embed Cache",
 }
 
 # Local-only node: H3RegionAttentionMask lives in the working copy

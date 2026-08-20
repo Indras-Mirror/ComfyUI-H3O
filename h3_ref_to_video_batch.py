@@ -28,6 +28,11 @@ import copy
 from comfy_api.latest import io
 from comfy_extras.nodes_minimax_h3 import MiniMaxH3ReferenceToVideo
 
+try:
+    from .h3_embed_cache import H3EmbedCachingClip  # package mode (ComfyUI)
+except ImportError:  # top-level import from the test harness (no package)
+    from h3_embed_cache import H3EmbedCachingClip
+
 _NODE_ID = "H3ReferenceToVideo"
 
 
@@ -99,6 +104,12 @@ class MiniMaxH3ReferenceToVideoBatch(MiniMaxH3ReferenceToVideo):
                 images_batch_regions=None):
         # INPUT_IS_LIST unwrap — the executor wraps every input in a list.
         clip = cls._un1(clip)
+        # Route the encode through the prompt-embedding cache (module-level CPU
+        # LRU keyed on model + tokenized structure; a no-op passthrough on miss).
+        # Same prompt + same refs with varying length/width/sampler => encode
+        # skipped on subsequent runs. Zero workflow edits: this node already
+        # drops into graphs in place of the official node.
+        clip = H3EmbedCachingClip(clip)
         vae = cls._un1(vae)
         audio_vae = cls._un1(audio_vae)
         prompt = cls._un1(prompt)
