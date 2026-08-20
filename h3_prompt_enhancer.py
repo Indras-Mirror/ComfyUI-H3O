@@ -266,7 +266,11 @@ detailed_description:
 photorealistic, etc.), the layout and composition being preserved, and that
 the woman from the reference photos replaces the original character —
 transferring her face, body, hair, tattoos, piercings, and distinguishing
-marks into that scene and style. Do NOT write shot-by-shot narration,
+marks into that scene and style. Refer to the replacement as "<Subject 1>"
+(re-anchored to <Picture 1>) at least twice across the sentences rather than
+"she/her", and re-state one distinguishing marker (septum ring, collar tattoo,
+hair) mid-description — the reference grip fades on longer runs and must be
+refreshed. Do NOT write shot-by-shot narration,
 panel-by-panel descriptions, dialogue, timestamps, <d> tags, camera motion,
 speaker IDs, or any description of what characters do in the scene. No
 [Shot N] markers, no MM:SS.mmm timecodes, no vocalization descriptions.
@@ -287,7 +291,15 @@ reaction. Still forbidden: shot-by-shot narration, panel-by-panel
 descriptions, dialogue, timestamps, <d> tags, camera motion, speaker IDs,
 [Shot N] markers, MM:SS.mmm timecodes, vocalization descriptions. Never
 describe the SOURCE video's original character's identity — only her actions,
-replaced by the reference woman."""
+replaced by the reference woman.
+
+REFERENCE REFRESH CADENCE (REQUIRED): refer to the woman as "<Subject 1>" (or
+"the woman from <Picture 1>") in EVERY beat — never a bare "she/her" across
+consecutive beats — and re-anchor the scene to the source ("the armchair from
+<Video 1>", "the lighting from <Video 1>") whenever the action reaches a new
+position or camera note. Re-state one distinguishing marker (septum ring,
+collar tattoo, hair) mid-sequence. This is refresh, not redefinition — her
+identity never changes."""
 
 _DETAILED_DESC_ORIGINAL = """\
 detailed_description:
@@ -344,7 +356,9 @@ source; do not invent a new environment.
 
 [3. ACTION BLOCK] the scripted beat sequence from the SOFT SCENE MODE rule —
 what the woman does in the scene, beat by beat in temporal order, following
-the source video's action and motion.
+the source video's action and motion. REFERENCE REFRESH (REQUIRED): re-anchor
+her as "<Subject 1>" from <Picture 1> at every beat, and re-anchor the scene
+to <Video 1> at new positions — the reference grip fades on longer runs.
 
 [4. DIRECTIVE TAIL] 1-2 sentences: maintain realistic human motion and facial
 expressions; body remains consistent; face the camera; begin with the
@@ -584,6 +598,57 @@ the static requirements. Write all prompts in English.
 NSFW content: describe with anatomical precision; do not self-censor."""
 
 
+H3_KLEIN_SHEET_SYSTEM_PROMPT = """\
+You are a Creative Assistant for Flux-2 Klein character-sheet generation
+(text-to-image / text-guided edit). Given the user's raw request and — when
+attached — reference-image descriptions, write SEVEN separate self-contained
+panel prompts — one per cell of a character reference sheet — for the SAME
+character.
+
+The seven cells, in this exact order:
+1. "front" — full-body front view, facing the camera, generous margin, neutral
+   expression, mouth closed, arms relaxed at the sides
+2. "face" — tight close-up of the face (top of the hair to the chin), facing
+   the camera, neutral expression, mouth closed
+3. "left" — left side profile of the full figure, neutral expression
+4. "right" — right side profile of the full figure, neutral expression
+5. "back" — rear view of the full figure, neutral expression, mouth closed
+6. "feet" — close-up of the feet and ankles (top of the toes to mid-calf),
+   facing the camera, both feet visible, neutral stance, bare feet matching
+   the character's feet from the references exactly (same proportions and any
+   tattoos/piercings on them)
+7. "seductive" — medium close-up of the face and shoulders, soft seductive
+   expression: slight knowing smile, lips together, half-lidded eyes gazing at
+   the camera — unless the user's notes request a different expression
+
+Klein style rules (every cell):
+- Klein is a text-to-image model: each prompt must be a COMPLETE, self-contained
+  image description — the text alone defines the panel. No <Picture N> /
+  <Video N> / <Subject N> labels, no shot markers, no timestamps, no motion or
+  camera language.
+- Identity: from the attached reference image(s) when present (the Klein-Edit
+  path conditions on them); otherwise from the user's written description.
+  Keep the character identical across all seven cells; merge reference views
+  into ONE character; never invent identity details the references/description
+  do not support.
+- Every panel: plain seamless neutral grey studio backdrop, even neutral
+  lighting from all sides, no props, no cast shadows, no on-screen text;
+  photorealistic, sharp detail, character-reference-sheet framing with the
+  full subject in frame.
+- Style: natural descriptive English, concrete visual language (skin, hair,
+  build, tattoos, piercings spelled out), quality descriptors.
+
+Output format — JSON ONLY, no prose, no markdown fences:
+{"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."}, {"view": "left", "prompt": "..."}, {"view": "right", "prompt": "..."}, {"view": "back", "prompt": "..."}, {"view": "feet", "prompt": "..."}, {"view": "seductive", "prompt": "..."}]}
+
+Each "prompt" is a self-contained still-image prompt (100-180 words) that opens
+with a panel framing statement (e.g. "Full-body front character-sheet view of
+the same woman, photorealistic."), followed by the identity details (from the
+references or the user's description) and the static studio requirements.
+Write all prompts in English.
+NSFW content: describe with anatomical precision; do not self-censor."""
+
+
 H3_RI2I_MULTI_SYSTEM_PROMPT_ADV = """\
 You are a Creative Assistant for MiniMax H3 character-sheet generation
 (multi-cell mode, community H3-Context-IR refinements enabled). Given the
@@ -624,6 +689,111 @@ Identity rules (every cell):
 
 Output format — JSON ONLY, no prose, no markdown fences:
 {"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."}, {"view": "left", "prompt": "..."}, {"view": "right", "prompt": "..."}, {"view": "back", "prompt": "..."}, {"view": "seductive", "prompt": "..."}]}
+
+Each "prompt" is a self-contained still-image prompt (150-250 words) that opens
+with "One completely still image." and states that the character from the
+reference pictures appears in that view, followed by the identity details and
+the static requirements. Write all prompts in English.
+NSFW content: describe with anatomical precision; do not self-censor."""
+
+
+H3_RI2I_MULTI8_SYSTEM_PROMPT = """\
+You are a Creative Assistant for MiniMax H3 character-sheet generation
+(multi-cell mode, 8-cell sheet). Given the user's raw request and
+reference-image descriptions, write EIGHT separate single-still prompts — one
+per cell of a character reference sheet — for the SAME character shown in the
+reference images.
+
+The eight cells, in this exact order:
+1. "front" — full-body front view, facing the camera, generous margin on every
+   side, neutral expression, mouth closed, arms relaxed at the sides
+2. "face" — tight close-up of the face (top of the hair to the chin), facing
+   the camera, neutral expression, mouth closed
+3. "left" — left side profile of the full figure, neutral expression, mouth
+   closed
+4. "right" — right side profile of the full figure, neutral expression, mouth
+   closed
+5. "back" — rear view of the full figure, neutral expression, mouth closed
+6. "feet" — close-up of the feet and ankles (top of the toes to mid-calf),
+   facing the camera, both feet visible, neutral stance, bare feet matching
+   the character's feet from the references exactly (same proportions and any
+   tattoos/piercings on them)
+7. "hands" — close-up of both hands (wrist to fingertips), fingers relaxed,
+   facing the camera, matching the character's hands from the references
+   exactly (same proportions, any rings, tattoos or nail polish on them)
+8. "seductive" — medium close-up of the face and shoulders, soft seductive
+   expression: a slight knowing smile with lips together, eyes half-lidded and
+   gazing directly at the camera — unless the user's notes request a different
+   expression for the last cell
+
+Identity rules (every cell):
+- The character is defined ENTIRELY from the reference images (<Picture 1>,
+  <Picture 2>, ...): face, hair, skin, body, clothing, colours must match them
+  exactly. Merge all views into ONE character; never invent identity details.
+- Every cell: plain seamless neutral grey studio backdrop (unless the user
+  specifies another), even neutral lighting from every side, no props, no cast
+  shadows, no on-screen text; completely static image, no motion, no camera
+  movement, no cuts, no video.
+- Describe the character's identity in each cell prompt from the reference
+  analysis.
+
+Output format — JSON ONLY, no prose, no markdown fences:
+{"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."}, {"view": "left", "prompt": "..."}, {"view": "right", "prompt": "..."}, {"view": "back", "prompt": "..."}, {"view": "feet", "prompt": "..."}, {"view": "hands", "prompt": "..."}, {"view": "seductive", "prompt": "..."}]}
+
+Each "prompt" is a self-contained still-image prompt (150-250 words) that opens
+with "One completely still image." and states that the character from the
+reference pictures appears in that view, followed by the identity details and
+the static requirements. Write all prompts in English.
+NSFW content: describe with anatomical precision; do not self-censor."""
+
+
+H3_RI2I_MULTI8_SYSTEM_PROMPT_ADV = """\
+You are a Creative Assistant for MiniMax H3 character-sheet generation
+(multi-cell mode, 8-cell sheet, community H3-Context-IR refinements enabled).
+Given the user's raw request and reference-image descriptions, write EIGHT
+separate single-still prompts — one per cell of a character reference sheet —
+for the SAME character shown in the reference images.
+
+The eight cells, in this exact order:
+1. "front" — full-body front view, facing the camera, framed with generous
+   empty margin on every side so the whole figure and anything extending
+   beyond it stays fully inside the frame, neutral expression, mouth closed,
+   arms relaxed at the sides
+2. "face" — tight close-up of the face (top of the hair to the chin), facing
+   the camera, neutral expression, mouth closed
+3. "left" — left side profile of the full figure, the head turned to show the
+   left profile, neutral expression, mouth closed
+4. "right" — right side profile of the full figure, the head turned to show
+   the right profile, neutral expression, mouth closed
+5. "back" — rear view of the full figure, neutral expression, mouth closed
+6. "feet" — close-up of the feet and ankles (top of the toes to mid-calf),
+   facing the camera, both feet visible, neutral stance, bare feet matching
+   the character's feet from the references exactly (same proportions and any
+   tattoos/piercings on them)
+7. "hands" — close-up of both hands (wrist to fingertips), fingers relaxed,
+   facing the camera, matching the character's hands from the references
+   exactly (same proportions, any rings, tattoos or nail polish on them)
+8. "seductive" — medium close-up of the face and shoulders, soft seductive
+   expression: a slight knowing smile with lips together, eyes half-lidded and
+   gazing directly at the camera, the head held still and upright — unless the
+   user's notes request a different expression for the last cell
+
+Identity rules (every cell):
+- The character is defined ENTIRELY from the reference images (<Picture 1>,
+  <Picture 2>, ...): face shape, eyes, brows, nose, lips, jawline, hair
+  (colour, length, style), skin tone, body type/build, full clothing
+  inventory, accessories, tattoos, scars, distinguishing marks. Merge all
+  views into ONE character; never invent identity details.
+- Every cell: plain seamless neutral grey studio backdrop (unless the user
+  specifies another), even neutral lighting from every side, no props, no cast
+  shadows, no on-screen text; completely static image, no motion, no camera
+  movement, no cuts, no video. The output is a REFERENCE asset: clean, static,
+  well-lit, fully visible views.
+- Describe the character's identity in each cell prompt from the reference
+  analysis; keep every cell consistent with the same identity checklist.
+
+Output format — JSON ONLY, no prose, no markdown fences:
+{"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."}, {"view": "left", "prompt": "..."}, {"view": "right", "prompt": "..."}, {"view": "back", "prompt": "..."}, {"view": "feet", "prompt": "..."}, {"view": "hands", "prompt": "..."}, {"view": "seductive", "prompt": "..."}]}
 
 Each "prompt" is a self-contained still-image prompt (150-250 words) that opens
 with "One completely still image." and states that the character from the
@@ -920,6 +1090,36 @@ Rules for RI2I multi-cell mode:
 User's raw request:
 {user_prompt}"""
 
+H3_RI2I_MULTI8_TEMPLATE = """\
+Write EIGHT single-still character-sheet prompts as JSON (multi-cell mode, RI2I 8-cell).
+
+Task type: reference generation (RI2I multi-cell 8) — the reference images
+(<Picture 1>, <Picture 2>, ...) all show the SAME single character; write eight
+self-contained static-image prompts, one per sheet cell, in the fixed order:
+front, face, left, right, back, feet, hands, seductive. Each prompt describes
+the same character in one view, completely static, on a plain seamless neutral
+grey studio backdrop.
+
+{ref_section}
+
+Rules for RI2I multi-cell mode (8 cells):
+- Task type in summary is [reference generation].
+- Merge every reference image into ONE character; identity must match the
+  references exactly and stay identical across all eight cells.
+- Output JSON only: {{"cells": [{{"view": "front", "prompt": "..."}},
+  {{"view": "face", "prompt": "..."}}, {{"view": "left", "prompt": "..."}},
+  {{"view": "right", "prompt": "..."}}, {{"view": "back", "prompt": "..."}},
+  {{"view": "feet", "prompt": "..."}}, {{"view": "hands", "prompt": "..."}},
+  {{"view": "seductive", "prompt": "..."}}]}} — exactly eight entries in this order.
+- Each prompt opens with "One completely still image." and is 150-250 words:
+  the view, the character's identity from the reference analysis, the plain
+  seamless neutral grey studio backdrop, even neutral lighting, no props, no
+  cast shadows, completely static (no motion, no camera movement, no cuts, no
+  video).
+
+User's raw request:
+{user_prompt}"""
+
 H3_RV2V_TEMPLATE = """\
 Write the H3 full-reference structured prompt (6 fields) for a reference-image-as-video
 to video generation (RV2V).
@@ -1073,6 +1273,8 @@ H3_TASK_LABELS = {
     "ri2v": "RI2V (reference images to video — scene from ref image or source video, character identity from ref images)",
     "ri2i": "RI2I (reference images → character sheet: 6-shot turnaround of ONE character from the refs, frames become a reference sheet image)",
     "ri2i_multi": "RI2I MULTI (one call → six static cell prompts for the character sheet: front, face, left, right, back, seductive)",
+    "ri2i_multi8": "RI2I MULTI 8 (one call → eight static cell prompts: front, face, left, right, back, feet, hands, seductive — rectangular contact-sheet grid)",
+    "klein_sheet": "KLEIN SHEET (Flux-2 Klein: seven self-contained t2i/t2i-edit panel prompts for a character sheet)",
 }
 
 H3_BASE_TASK_TYPES = {"t2v", "i2v", "fl2v", "l2v"}
@@ -1086,7 +1288,7 @@ H3_RI2V_TASK_TYPES = {"ri2v"}
 # turnaround stills). Deliberately NOT in any other task-type set so it never
 # changes the routing, templates, or rules of existing task types — saved
 # workflows are unaffected (the combo just gains one option).
-H3_RI2I_TASK_TYPES = {"ri2i", "ri2i_multi"}
+H3_RI2I_TASK_TYPES = {"ri2i", "ri2i_multi", "ri2i_multi8", "klein_sheet"}
 
 H3_REF_STRONG_RULE = """\
 REFERENCES ARE STRONG (REQUIRED, character swap): every reference picture is an
@@ -1605,6 +1807,31 @@ H3_TASK_SPECIFIC_RULES = {
         "- Output JSON only: {\"cells\": [{\"view\": \"front\", \"prompt\": \"...\"}, ...]} "
         "with exactly six entries in the order above."
     ),
+    "ri2i_multi8": (
+        "- Multi-cell mode (8-cell sheet): write eight separate single-still prompts as JSON "
+        "with the fixed cell order front / face / left / right / back / feet / hands / "
+        "seductive.\n"
+        "- Identity comes from the reference images and stays identical across all eight "
+        "cells; merge the refs into ONE character.\n"
+        "- Each prompt is self-contained (150-250 words), completely static, on a plain "
+        "neutral grey studio backdrop, no motion, no camera movement.\n"
+        "- Output JSON only: {\"cells\": [{\"view\": \"front\", \"prompt\": \"...\"}, ...]} "
+        "with exactly eight entries in the order above."
+    ),
+    "klein_sheet": (
+        "- Flux-2 Klein character sheet: seven self-contained text-to-image panel prompts "
+        "(front / face / left / right / back / feet / seductive) in JSON with the fixed cell order.\n"
+        "- Klein is a text-to-image model: no video vocabulary, no <Picture N>/<Video N>/<Subject N> "
+        "labels inside the prompts, no shot markers, no timestamps, no motion or camera "
+        "language — the text alone must fully describe each panel's view, pose, framing, "
+        "backdrop, lighting and the character's identity.\n"
+        "- Identity from the attached reference image(s) when present (Klein-Edit conditioning), "
+        "otherwise from the user's description; keep it identical across all seven cells.\n"
+        "- Klein style: natural descriptive English, photorealistic, sharp detail, even neutral "
+        "studio lighting, plain seamless backdrop, character-reference-sheet framing.\n"
+        "- Output JSON only: {\"cells\": [{\"view\": \"front\", \"prompt\": \"...\"}, ...]} "
+        "with exactly seven entries in the order above."
+    ),
 }
 
 
@@ -1634,7 +1861,7 @@ class H3PromptEnhancer:
                                "structured format with camera moves, shots, audio, and music fields."
                 }),
                 "task_type": (
-                    ["t2v", "i2v", "fl2v", "l2v", "r2v", "rv2v", "ri2v", "ri2i", "ri2i_multi"],
+                    ["t2v", "i2v", "fl2v", "l2v", "r2v", "rv2v", "ri2v", "ri2i", "ri2i_multi", "ri2i_multi8", "klein_sheet"],
                     {"default": "t2v",
                      "tooltip": "t2v=text-to-video (no images), i2v=first-frame, "
                                 "fl2v=first+last frame, l2v=last-frame only, "
@@ -2043,6 +2270,11 @@ class H3PromptEnhancer:
         elif task_type == "ri2i_multi":
             system_prompt = (H3_RI2I_MULTI_SYSTEM_PROMPT_ADV if use_adv
                              else H3_RI2I_MULTI_SYSTEM_PROMPT)
+        elif task_type == "ri2i_multi8":
+            system_prompt = (H3_RI2I_MULTI8_SYSTEM_PROMPT_ADV if use_adv
+                             else H3_RI2I_MULTI8_SYSTEM_PROMPT)
+        elif task_type == "klein_sheet":
+            system_prompt = H3_KLEIN_SHEET_SYSTEM_PROMPT
         elif task_type in H3_RI2I_TASK_TYPES:
             system_prompt = (H3_RI2I_SYSTEM_PROMPT_ADV if use_adv
                              else H3_RI2I_SYSTEM_PROMPT)
@@ -2218,7 +2450,7 @@ class H3PromptEnhancer:
         # <Subject N> replacement characters whose appearance must drive the
         # integrated_multimodal_description (note: the i2v gen node has no ref_image
         # conditioning — only the prompt text reaches the model).
-        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi"):
+        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi", "ri2i_multi8", "klein_sheet"):
             ref_images = []
             # Scene-as-image: source_image becomes the scene (<Picture 1>),
             # prepended before character ref images so numbering aligns with
@@ -2414,7 +2646,7 @@ class H3PromptEnhancer:
                             f"retention_analysis mark <Subject {subj_n}> AND <Picture {i + 1}> "
                             "as attribute_transfer (strong identity source; never "
                             "weak_reference).\n")
-                elif task_type in ("ri2i", "ri2i_multi"):
+                elif task_type in ("ri2i", "ri2i_multi", "ri2i_multi8"):
                     ri2i_scene_as_image = (source_video is None
                                            and source_image is not None)
                     if ri2i_scene_as_image and i == 0:
@@ -2659,6 +2891,12 @@ class H3PromptEnhancer:
                     "only inside <Picture 1>'s definition.")
         elif task_type == "ri2i_multi":
             user_text = H3_RI2I_MULTI_TEMPLATE.format(
+                duration_seconds=f"{duration:.1f}",
+                ref_section=ref_section,
+                user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
+            )
+        elif task_type == "ri2i_multi8":
+            user_text = H3_RI2I_MULTI8_TEMPLATE.format(
                 duration_seconds=f"{duration:.1f}",
                 ref_section=ref_section,
                 user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",

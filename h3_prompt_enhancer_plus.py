@@ -115,18 +115,18 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         return base
 
     RETURN_TYPES = ("STRING", "STRING", "IMAGE",
-                    "STRING", "STRING", "STRING", "STRING", "STRING", "STRING",)
+                    "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING", "STRING",)
     RETURN_NAMES = ("h3_prompt", "system_prompt", "ref_images_out",
-                    "cell_1", "cell_2", "cell_3", "cell_4", "cell_5", "cell_6",)
+                    "cell_1", "cell_2", "cell_3", "cell_4", "cell_5", "cell_6", "cell_7", "cell_8",)
     FUNCTION = "enhance_plus"
     CATEGORY = "h3/prompt"
     # ref_images_out is a LIST of individual [1,H,W,C] refs (in <Picture N>
     # order) — every frame keeps its own geometry, never stretched/collated.
     # Consumers that declare INPUT_IS_LIST (e.g. H3ReferenceToVideo Batch)
     # receive the whole list in one call; others run once per item.
-    # cell_1..cell_6: the six parsed static-cell prompts (ri2i_multi mode only;
-    # empty strings for any other task type).
-    OUTPUT_IS_LIST = (False, False, True, False, False, False, False, False, False)
+    # cell_1..cell_8: the parsed static-cell prompts (ri2i_multi /
+    # ri2i_multi8 / klein_sheet mode only; empty strings otherwise).
+    OUTPUT_IS_LIST = (False, False, True, False, False, False, False, False, False, False, False)
     # Accept a LIST on images_batch (and lists on every input) in one call.
     # The executor wraps ALL inputs in lists — each is unwrapped below before
     # the parent enhance() sees it, so the LLM path is unchanged.
@@ -204,7 +204,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         # scene mode, ri2v scene mode, ri2i/ri2i_multi character sheet IN the
         # scene). Numbering must match enhance() so ref_images_out aligns with
         # the H3RefToVid node where the same scene image wires to ref_image_0.
-        ri2v_scene_as_image = (task_type in ("rv2v", "ri2v", "ri2i", "ri2i_multi")
+        ri2v_scene_as_image = (task_type in ("rv2v", "ri2v", "ri2i", "ri2i_multi", "ri2i_multi8")
                                and source_image is not None
                                and source_video is None)
         if ri2v_scene_as_image:
@@ -228,7 +228,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
                 img.unsqueeze(0) if img.dim() == 3 else img)
 
         # Reference images in order
-        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi"):
+        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi", "ri2i_multi8"):
             for ref in (reference_image_0, reference_image_1,
                         reference_image_2):
                 if ref is not None:
@@ -287,25 +287,26 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         # order, each at its OWN geometry (no stretching, no collation). The
         # H3ReferenceToVideo (Batch) node accepts this list and treats every
         # frame as its own reference.
-        if task_type == "ri2i_multi":
+        if task_type in ("ri2i_multi", "ri2i_multi8", "klein_sheet"):
             cells = _parse_multi_cells(h3_prompt)
             return (h3_prompt, system_prompt, ref_images_ordered, *cells)
         return (h3_prompt, system_prompt, ref_images_ordered,
-                "", "", "", "", "", "")
+                "", "", "", "", "", "", "", "")
 
 
 def _parse_multi_cells(raw: str):
-    """Split the ri2i_multi JSON reply into six cell prompts.
+    """Split the ri2i_multi JSON reply into up to eight cell prompts.
 
     Expected: {"cells": [{"view": "front", "prompt": "..."}, ...]} in the fixed
-    order front, face, left, right, back, seductive. Tolerates markdown fences,
-    chatty prose around the JSON, and missing/extra entries (falls back to the
-    raw text in cell_1 when nothing parses, so the user still sees the reply).
+    order front, face, left, right, back, feet, hands, seductive (6-cell modes
+    simply omit the last two). Tolerates markdown fences, chatty prose around
+    the JSON, and missing/extra entries (falls back to the raw text in cell_1
+    when nothing parses, so the user still sees the reply).
     """
     import json
     import re
 
-    cells = ["", "", "", "", "", ""]
+    cells = ["", "", "", "", "", "", "", ""]
     cleaned = re.sub(r"```(?:json)?", "", raw).strip()
     start, end = cleaned.find("{"), cleaned.rfind("}")
     if start >= 0 and end > start:
@@ -317,7 +318,7 @@ def _parse_multi_cells(raw: str):
             entries = payload.get("cells") or payload.get("prompts") or []
             if not isinstance(entries, list):
                 entries = [entries]
-            for i, entry in enumerate(entries[:6]):
+            for i, entry in enumerate(entries[:8]):
                 if not isinstance(entry, dict):
                     continue
                 prompt = (entry.get("prompt") or entry.get("text")
