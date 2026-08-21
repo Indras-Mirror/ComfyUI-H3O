@@ -115,6 +115,10 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
                        "describe the explicit sexual act from the source "
                        "video in the final prompt."
         })
+        # llamacpp_url appended LAST (after scene_mode) so saved workflows'
+        # widgets_values keep their existing indices (trailing new widget).
+        lc = base["optional"].pop("llamacpp_url")
+        base["optional"]["llamacpp_url"] = lc
         return base
 
     RETURN_TYPES = ("STRING", "STRING", "IMAGE",
@@ -128,7 +132,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
     # Consumers that declare INPUT_IS_LIST (e.g. H3ReferenceToVideo Batch)
     # receive the whole list in one call; others run once per item.
     # cell_1..cell_8: the parsed static-cell prompts (ri2i_multi /
-    # ri2i_multi8 / klein_sheet mode only; empty strings otherwise).
+    # klein_sheet mode only; empty strings otherwise).
     OUTPUT_IS_LIST = (False, False, True, False, False, False, False, False, False, False, False)
     # Accept a LIST on images_batch (and lists on every input) in one call.
     # The executor wraps ALL inputs in lists — each is unwrapped below before
@@ -154,7 +158,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
                      editing_frame="on", seed=-1, seed_control="randomize",
                      context_length=-1,
                      chain_conversation="off", scene_mode="hard",
-                     enhanced_rules=True):
+                     enhanced_rules=True, llamacpp_url=""):
         # INPUT_IS_LIST unwrap — every input arrives wrapped in a list.
         prompt = self._un1(prompt)
         task_type = self._un1(task_type)
@@ -184,6 +188,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         chain_conversation = self._un1(chain_conversation)
         scene_mode = self._un1(scene_mode)
         enhanced_rules = self._un1(enhanced_rules)
+        llamacpp_url = self._un1(llamacpp_url)
 
         # seed_control: randomize -> fresh seed every run (backend seed=-1);
         # fixed -> honor the seed value above for reproducible output.
@@ -207,7 +212,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         # scene mode, ri2v scene mode, ri2i/ri2i_multi character sheet IN the
         # scene). Numbering must match enhance() so ref_images_out aligns with
         # the H3RefToVid node where the same scene image wires to ref_image_0.
-        ri2v_scene_as_image = (task_type in ("rv2v", "ri2v", "ri2i", "ri2i_multi", "ri2i_multi8")
+        ri2v_scene_as_image = (task_type in ("rv2v", "ri2v", "ri2i", "ri2i_multi")
                                and source_image is not None
                                and source_video is None)
         if ri2v_scene_as_image:
@@ -231,7 +236,7 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
                 img.unsqueeze(0) if img.dim() == 3 else img)
 
         # Reference images in order
-        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi", "ri2i_multi8"):
+        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi"):
             for ref in (reference_image_0, reference_image_1,
                         reference_image_2):
                 if ref is not None:
@@ -284,13 +289,14 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
             context_length=context_length,
             chain_conversation=chain_conversation,
             scene_mode=scene_mode,
+            llamacpp_url=llamacpp_url,
         )
 
         # ref_images_out — a LIST of individual [1,H,W,C] images in <Picture N>
         # order, each at its OWN geometry (no stretching, no collation). The
         # H3ReferenceToVideo (Batch) node accepts this list and treats every
         # frame as its own reference.
-        if task_type in ("ri2i_multi", "ri2i_multi8", "klein_sheet"):
+        if task_type in ("ri2i_multi", "klein_sheet"):
             cells = _parse_multi_cells(h3_prompt)
             return (h3_prompt, system_prompt, ref_images_ordered, *cells)
         return (h3_prompt, system_prompt, ref_images_ordered,
@@ -301,7 +307,8 @@ def _parse_multi_cells(raw: str):
     """Split the ri2i_multi JSON reply into up to eight cell prompts.
 
     Expected: {"cells": [{"view": "front", "prompt": "..."}, ...]} in the fixed
-    order front, face, left, right, back, feet, hands, seductive (6-cell modes
+    order front, face, left, right, back, feet, feet_pointe, seductive (6-cell
+    modes
     simply omit the last two). Tolerates markdown fences, chatty prose around
     the JSON, and missing/extra entries (falls back to the raw text in cell_1
     when nothing parses, so the user still sees the reply).

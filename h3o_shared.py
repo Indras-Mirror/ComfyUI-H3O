@@ -69,96 +69,57 @@ LOCAL_MODEL_DEFAULTS = {
         "ollama_model": "aha2025/llama-joycaption-beta-one-hf-llava:Q6_K",
         "ollama_url": "http://localhost:11434",
     },
-    # On-demand llama.cpp backends. Flags below are lifted VERBATIM from the
-    # fleet wrappers (~/.local/bin/qwen3.8-quetza, glimmer-quetza) — same
-    # samplers, same TBQ4 KV, same MTP/thinking settings. Only the context
-    # differs: it is a node widget (context_length), resolved per-run by
-    # _resolve_llama_ctx() and clamped to llama_ctx_max.
-    "llamacpp/qwen3.8-heretic-ara": {
-        "label": "Qwen3.8-27B heretic-ara (llama.cpp) 16.8GB",
+    # Generic llama.cpp entry: connect to ANY llama.cpp-compatible server.
+    # Set the node's llamacpp_url (or H3O_LLAMACPP_URL) and pick the model
+    # name via custom_model — the server is assumed to be already running,
+    # nothing is spawned or killed. Named on-demand models (llama_bin +
+    # model paths, spawn/teardown) can be added via the user config file
+    # ($H3O_LLAMACPP_CONFIG or ~/.config/h3o/llamacpp.json) — see
+    # llamacpp.example.json.
+    "llamacpp": {
+        "label": "llamacpp (external server)",
         "backend": "llamacpp",
-        "llama_url": "http://127.0.0.1:8098",
-        "llama_model": "Qwen3.8-27B-heretic-ara.i1-Q4_K_M.gguf",
-        "llama_bin": "/home/mal/AI/llama.cpp-mtp-fixes/build/bin/llama-server",
-        "llama_model_path": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-heretic-ara.i1-Q4_K_M.gguf",
-        "llama_fallback_model": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-heretic-ara.i1-IQ4_XS.gguf",
-        "llama_mmproj_path": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-heretic-ara.mmproj-Q8_0.gguf",
-        "llama_ctx": 262144,      # wrapper default
-        "llama_ctx_max": 262144,  # native model max (no YaRN)
-        "llama_log": "/tmp/h3o-llamacpp-8098.log",
-        "llama_flags": [
-            "--flash-attn", "on", "-t", "12", "--poll", "0", "-ngl", "99",
-            "--parallel", "1", "-b", "4096", "-ub", "32",
-            "-ctk", "tbq4_0", "-ctv", "tbq4_0",
-            "--spec-type", "draft-mtp", "--spec-draft-n-max", "3",
-            "-ctkd", "tbq4_0", "-ctvd", "tbq4_0",
-            "--no-warmup", "--jinja",
-            "--chat-template-file", "/home/mal/.config/quetza/templates/qwen3.8-froggeric-v22.jinja",
-            "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.0",
-            "--presence-penalty", "1.5", "--repeat-penalty", "1.0",
-            "-n", "32768", "--seed", "3407",
-            "--chat-template-kwargs", '{"enable_thinking":false}',
-        ],
-    },
-    # Aggressive variant of the same Qwen3.8 base (HauhauCS uncensored
-    # Q4_K_P main / IQ4_XS --fast). TEST wrapper ~/.local/bin/qwen3.8-quetza-agg
-    # (port 8099), same stack: TBQ4 KV, embedded MTP, native 262K. mmproj
-    # still the heretic Q8_0 projector (same base model — see wrapper note).
-    "llamacpp/qwen3.8-aggressive": {
-        "label": "Qwen3.8-27B Aggressive HauhauCS (llama.cpp) 17.9GB",
-        "backend": "llamacpp",
-        "llama_url": "http://127.0.0.1:8099",
-        "llama_model": "Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf",
-        "llama_bin": "/home/mal/AI/llama.cpp-mtp-fixes/build/bin/llama-server",
-        "llama_model_path": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf",
-        "llama_fallback_model": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-IQ4_XS.gguf",
-        "llama_mmproj_path": "/media/mal/NVME1TB/Models/Qwen3.8/Qwen3.8-27B-heretic-ara.mmproj-Q8_0.gguf",
-        "llama_ctx": 262144,      # wrapper default
-        "llama_ctx_max": 262144,  # native model max (no YaRN)
-        "llama_log": "/tmp/h3o-llamacpp-8099.log",
-        "llama_flags": [
-            "--flash-attn", "on", "-t", "12", "--poll", "0", "-ngl", "99",
-            "--parallel", "1", "-b", "4096", "-ub", "32",
-            "-ctk", "tbq4_0", "-ctv", "tbq4_0",
-            "--spec-type", "draft-mtp", "--spec-draft-n-max", "3",
-            "-ctkd", "tbq4_0", "-ctvd", "tbq4_0",
-            "--no-warmup", "--jinja",
-            "--chat-template-file", "/home/mal/.config/quetza/templates/qwen3.8-froggeric-v22.jinja",
-            "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.0",
-            "--presence-penalty", "1.5", "--repeat-penalty", "1.0",
-            "-n", "32768", "--seed", "3407",
-            "--chat-template-kwargs", '{"enable_thinking":false}',
-        ],
-    },
-    "llamacpp/muse-glimmer": {
-        "label": "Muse-Glimmer-30B heretic (llama.cpp) 16.2GB",
-        "backend": "llamacpp",
-        "llama_url": "http://127.0.0.1:8097",
-        "llama_model": "darkc0de_Muse-Glimmer-30B-heretic-IQ4_NL",
-        "llama_bin": "/home/mal/AI/llama.cpp-mtp-fixes/build-glimmer/bin/llama-server",
-        "llama_model_path": "/media/mal/NVME1TB/Models/darkc0de_Muse-Glimmer-30B-heretic-IQ4_NL.gguf",
-        "llama_mmproj_path": "/media/mal/NVME1TB/Models/mmproj-darkc0de_Muse-Glimmer-30B-heretic-f16.gguf",
-        "llama_ctx": 524288,      # wrapper default (512K — tested healthy)
-        "llama_ctx_max": 524288,  # clamp: 1M was OOM-crash-prone (wrapper notes)
-        "llama_yarn": True,       # YaRN stretch: --override-kv + rope-scale
-        "llama_yarn_orig_ctx": 131072,
-        "llama_override_kv": "muse-glimmer.context_length",
-        "llama_log": "/tmp/h3o-llamacpp-8097.log",
-        "llama_flags": [
-            "--flash-attn", "on", "-t", "12", "--poll", "0", "-ngl", "99",
-            "--parallel", "1", "-b", "4096", "-ub", "32",
-            "-ctk", "tbq4_0", "-ctv", "tbq4_0",
-            "--no-warmup", "--jinja",
-            "--reasoning", "on",
-            "--temp", "0.6", "--top-p", "0.9", "--top-k", "20", "--min-p", "0.0",
-            "--repeat-penalty", "1.0",
-            "-n", "32768", "--seed", "3407",
-        ],
+        "llama_url": "",
+        "llama_model": "",
     },
 }
 
+
 # Ollama default URL
 OLLAMA_DEFAULT_URL = "http://localhost:11434"
+
+
+def _load_user_llamacpp_config():
+    """Merge user-defined local backend entries from a JSON config file.
+
+    Path: $H3O_LLAMACPP_CONFIG or ~/.config/h3o/llamacpp.json. Entries follow
+    the same schema as LOCAL_MODEL_DEFAULTS (see llamacpp.example.json) and
+    are merged by key — a user entry with the same key REPLACES the built-in.
+    """
+    import os as _os
+    path = (_os.environ.get("H3O_LLAMACPP_CONFIG")
+            or _os.path.expanduser("~/.config/h3o/llamacpp.json"))
+    if not _os.path.exists(path):
+        return
+    try:
+        with open(path) as f:
+            cfg = json.load(f)
+    except Exception as e:
+        logging.warning(f"[H3O] failed to read llamacpp config {path}: {e}")
+        return
+    if not isinstance(cfg, dict):
+        logging.warning(f"[H3O] llamacpp config {path} must be a JSON object")
+        return
+    for key, entry in cfg.items():
+        if not isinstance(entry, dict) or "backend" not in entry:
+            logging.warning(f"[H3O] skipping invalid llamacpp config entry '{key}'")
+            continue
+        entry.setdefault("label", key)
+        LOCAL_MODEL_DEFAULTS[key] = entry
+    logging.info(f"[H3O] loaded {len(cfg)} local backend(s) from {path}")
+
+
+_load_user_llamacpp_config()
 
 def _check_ollama(url=None):
     """Return True if Ollama is reachable at the given URL."""

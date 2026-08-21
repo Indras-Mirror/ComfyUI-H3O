@@ -721,115 +721,6 @@ the static requirements. Write all prompts in English.
 NSFW content: describe with anatomical precision; do not self-censor."""
 
 
-H3_RI2I_MULTI8_SYSTEM_PROMPT = """\
-You are a Creative Assistant for MiniMax H3 character-sheet generation
-(multi-cell mode, 8-cell sheet). Given the user's raw request and
-reference-image descriptions, write EIGHT separate single-still prompts — one
-per cell of a character reference sheet — for the SAME character shown in the
-reference images.
-
-The eight cells, in this exact order:
-1. "front" — full-body front view, facing the camera, generous margin on every
-   side, neutral expression, mouth closed, arms relaxed at the sides
-2. "face" — tight close-up of the face (top of the hair to the chin), facing
-   the camera, neutral expression, mouth closed
-3. "left" — left side profile of the full figure, neutral expression, mouth
-   closed
-4. "right" — right side profile of the full figure, neutral expression, mouth
-   closed
-5. "back" — rear view of the full figure, neutral expression, mouth closed
-6. "feet" — close-up of the feet and ankles (top of the toes to mid-calf),
-   facing the camera, both feet visible, neutral stance, bare feet matching
-   the character's feet from the references exactly (same proportions and any
-   tattoos/piercings on them)
-7. "hands" — close-up of both hands (wrist to fingertips), fingers relaxed,
-   facing the camera, matching the character's hands from the references
-   exactly (same proportions, any rings, tattoos or nail polish on them)
-8. "seductive" — medium close-up of the face and shoulders, soft seductive
-   expression: a slight knowing smile with lips together, eyes half-lidded and
-   gazing directly at the camera — unless the user's notes request a different
-   expression for the last cell
-
-Identity rules (every cell):
-- The character is defined ENTIRELY from the reference images (<Picture 1>,
-  <Picture 2>, ...): face, hair, skin, body, clothing, colours must match them
-  exactly. Merge all views into ONE character; never invent identity details.
-- Every cell: plain seamless neutral grey studio backdrop (unless the user
-  specifies another), even neutral lighting from every side, no props, no cast
-  shadows, no on-screen text; completely static image, no motion, no camera
-  movement, no cuts, no video.
-- Describe the character's identity in each cell prompt from the reference
-  analysis.
-
-Output format — JSON ONLY, no prose, no markdown fences:
-{"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."}, {"view": "left", "prompt": "..."}, {"view": "right", "prompt": "..."}, {"view": "back", "prompt": "..."}, {"view": "feet", "prompt": "..."}, {"view": "hands", "prompt": "..."}, {"view": "seductive", "prompt": "..."}]}
-
-Each "prompt" is a self-contained still-image prompt (150-250 words) that opens
-with "One completely still image." and states that the character from the
-reference pictures appears in that view, followed by the identity details and
-the static requirements. Write all prompts in English.
-NSFW content: describe with anatomical precision; do not self-censor."""
-
-
-H3_RI2I_MULTI8_SYSTEM_PROMPT_ADV = """\
-You are a Creative Assistant for MiniMax H3 character-sheet generation
-(multi-cell mode, 8-cell sheet, community H3-Context-IR refinements enabled).
-Given the user's raw request and reference-image descriptions, write EIGHT
-separate single-still prompts — one per cell of a character reference sheet —
-for the SAME character shown in the reference images.
-
-The eight cells, in this exact order:
-1. "front" — full-body front view, facing the camera, framed with generous
-   empty margin on every side so the whole figure and anything extending
-   beyond it stays fully inside the frame, neutral expression, mouth closed,
-   arms relaxed at the sides
-2. "face" — tight close-up of the face (top of the hair to the chin), facing
-   the camera, neutral expression, mouth closed
-3. "left" — left side profile of the full figure, the head turned to show the
-   left profile, neutral expression, mouth closed
-4. "right" — right side profile of the full figure, the head turned to show
-   the right profile, neutral expression, mouth closed
-5. "back" — rear view of the full figure, neutral expression, mouth closed
-6. "feet" — close-up of the feet and ankles (top of the toes to mid-calf),
-   facing the camera, both feet visible, neutral stance, bare feet matching
-   the character's feet from the references exactly (same proportions and any
-   tattoos/piercings on them)
-7. "hands" — close-up of both hands (wrist to fingertips), fingers relaxed,
-   facing the camera, matching the character's hands from the references
-   exactly (same proportions, any rings, tattoos or nail polish on them)
-8. "seductive" — medium close-up of the face and shoulders, soft seductive
-   expression: a slight knowing smile with lips together, eyes half-lidded and
-   gazing directly at the camera, the head held still and upright — unless the
-   user's notes request a different expression for the last cell
-
-Identity rules (every cell):
-- The character is defined ENTIRELY from the reference images (<Picture 1>,
-  <Picture 2>, ...): face shape, eyes, brows, nose, lips, jawline, hair
-  (colour, length, style), skin tone, body type/build, full clothing
-  inventory, accessories, tattoos, scars, distinguishing marks. Merge all
-  views into ONE character; never invent identity details.
-- Every cell: plain seamless neutral grey studio backdrop (unless the user
-  specifies another), even neutral lighting from every side, no props, no cast
-  shadows, no on-screen text; completely static image, no motion, no camera
-  movement, no cuts, no video. The output is a REFERENCE asset: clean, static,
-  well-lit, fully visible views.
-- Describe the character's identity in each cell prompt from the reference
-  analysis; keep every cell consistent with the same identity checklist.
-
-Output format — JSON ONLY, no prose, no markdown fences:
-{"cells": [{"view": "front", "prompt": "..."}, {"view": "face", "prompt": "..."}, {"view": "left", "prompt": "..."}, {"view": "right", "prompt": "..."}, {"view": "back", "prompt": "..."}, {"view": "feet", "prompt": "..."}, {"view": "hands", "prompt": "..."}, {"view": "seductive", "prompt": "..."}]}
-
-Each "prompt" is a self-contained still-image prompt (150-250 words) that opens
-with "One completely still image." and states that the character from the
-reference pictures appears in that view, followed by the identity details and
-the static requirements. Write all prompts in English.
-NSFW content: describe with anatomical precision; do not self-censor."""
-
-
-# ── RV2V subject-mode blocks (injected into H3_RV2V_SYSTEM_PROMPT_ADV) ──────
-# same_subject=False (default): each ref image is its own replacement character.
-# same_subject=True: all ref images are ONE person (multiple views merged into
-# a single <Subject 1>) — the batch use case.
 H3_RV2V_SEMANTICS_SEPARATE = (
     "- The reference images (<Picture 1>, <Picture 2>, ...) are REPLACEMENT "
     "characters: each picture defines the appearance of a character to swap into "
@@ -1118,36 +1009,6 @@ Rules for RI2I multi-cell mode:
 User's raw request:
 {user_prompt}"""
 
-H3_RI2I_MULTI8_TEMPLATE = """\
-Write EIGHT single-still character-sheet prompts as JSON (multi-cell mode, RI2I 8-cell).
-
-Task type: reference generation (RI2I multi-cell 8) — the reference images
-(<Picture 1>, <Picture 2>, ...) all show the SAME single character; write eight
-self-contained static-image prompts, one per sheet cell, in the fixed order:
-front, face, left, right, back, feet, hands, seductive. Each prompt describes
-the same character in one view, completely static, on a plain seamless neutral
-grey studio backdrop.
-
-{ref_section}
-
-Rules for RI2I multi-cell mode (8 cells):
-- Task type in summary is [reference generation].
-- Merge every reference image into ONE character; identity must match the
-  references exactly and stay identical across all eight cells.
-- Output JSON only: {{"cells": [{{"view": "front", "prompt": "..."}},
-  {{"view": "face", "prompt": "..."}}, {{"view": "left", "prompt": "..."}},
-  {{"view": "right", "prompt": "..."}}, {{"view": "back", "prompt": "..."}},
-  {{"view": "feet", "prompt": "..."}}, {{"view": "hands", "prompt": "..."}},
-  {{"view": "seductive", "prompt": "..."}}]}} — exactly eight entries in this order.
-- Each prompt opens with "One completely still image." and is 150-250 words:
-  the view, the character's identity from the reference analysis, the plain
-  seamless neutral grey studio backdrop, even neutral lighting, no props, no
-  cast shadows, completely static (no motion, no camera movement, no cuts, no
-  video).
-
-User's raw request:
-{user_prompt}"""
-
 H3_RV2V_TEMPLATE = """\
 Write the H3 full-reference structured prompt (6 fields) for a reference-image-as-video
 to video generation (RV2V).
@@ -1301,7 +1162,6 @@ H3_TASK_LABELS = {
     "ri2v": "RI2V (reference images to video — scene from ref image or source video, character identity from ref images)",
     "ri2i": "RI2I (reference images → character sheet: 6-shot turnaround of ONE character from the refs, frames become a reference sheet image)",
     "ri2i_multi": "RI2I MULTI (one call → six static cell prompts for the character sheet: front, face, left, right, back, seductive)",
-    "ri2i_multi8": "RI2I MULTI 8 (one call → eight static cell prompts: front, face, left, right, back, feet, hands, seductive — rectangular contact-sheet grid)",
     "klein_sheet": "KLEIN SHEET (Flux-2 Klein: seven self-contained t2i/t2i-edit panel prompts for a character sheet)",
 }
 
@@ -1312,11 +1172,10 @@ H3_RV2V_TASK_TYPES = {"rv2v"}
 # deliberately NOT in H3_RV2V_TASK_TYPES so it routes through the r2v branch.
 H3_RI2V_TASK_TYPES = {"ri2v"}
 
-# ri2i is a NEW standalone task type (reference images → character sheet /
+# ri2i is a standalone task type (reference images → character sheet /
 # turnaround stills). Deliberately NOT in any other task-type set so it never
-# changes the routing, templates, or rules of existing task types — saved
-# workflows are unaffected (the combo just gains one option).
-H3_RI2I_TASK_TYPES = {"ri2i", "ri2i_multi", "ri2i_multi8", "klein_sheet"}
+# changes the routing, templates, or rules of existing task types.
+H3_RI2I_TASK_TYPES = {"ri2i", "ri2i_multi", "klein_sheet"}
 
 H3_REF_STRONG_RULE = """\
 REFERENCES ARE STRONG (REQUIRED, character swap): every reference picture is an
@@ -1357,7 +1216,6 @@ Each reference image anchors its OWN replacement character (<Picture 1> -> <Subj
 <Picture 2> -> <Subject 2>, ...) unless the user explicitly says two images are the same person.
 Never merge the reference images into one subject, and never treat <Video 1>'s
 content as the identity of a replaced character — it is the scene."""
-
 # RI2V retention recipe — character-swap structure matching the community
 # minimaxH3Character workflow: replacement = attribute_transfer (transfer
 # face/body/hair/clothing from reference), picture refs = attribute_transfer,
@@ -1838,17 +1696,6 @@ H3_TASK_SPECIFIC_RULES = {
         "- Output JSON only: {\"cells\": [{\"view\": \"front\", \"prompt\": \"...\"}, ...]} "
         "with exactly six entries in the order above."
     ),
-    "ri2i_multi8": (
-        "- Multi-cell mode (8-cell sheet): write eight separate single-still prompts as JSON "
-        "with the fixed cell order front / face / left / right / back / feet / hands / "
-        "seductive.\n"
-        "- Identity comes from the reference images and stays identical across all eight "
-        "cells; merge the refs into ONE character.\n"
-        "- Each prompt is self-contained (150-250 words), completely static, on a plain "
-        "neutral grey studio backdrop, no motion, no camera movement.\n"
-        "- Output JSON only: {\"cells\": [{\"view\": \"front\", \"prompt\": \"...\"}, ...]} "
-        "with exactly eight entries in the order above."
-    ),
     "klein_sheet": (
         "- Flux-2 Klein character sheet: seven self-contained text-to-image panel prompts "
         "(front / face / left / right / back / feet / seductive) in JSON with the fixed cell order.\n"
@@ -1875,7 +1722,7 @@ class H3PromptEnhancer:
 
     Produces the structured prompt that H3 expects — the community substitute for
     the hosted "H3-Context-IR" prompt-enhancement system. One node handles all
-    H3 task types: a task_type widget (T2V / I2V / FL2V / L2V / R2V / RV2V) switches
+    H3 task types: a task_type widget (T2V / I2V / FL2V / L2V / RV2V / RI2V / RI2I) switches
     between the 3-field base format and the 6-field full-reference format.
 
     Reuses the OpenRouter API client (_call_openrouter) and Ollama fallback from
@@ -1892,11 +1739,11 @@ class H3PromptEnhancer:
                                "structured format with camera moves, shots, audio, and music fields."
                 }),
                 "task_type": (
-                    ["t2v", "i2v", "fl2v", "l2v", "r2v", "rv2v", "ri2v", "ri2i", "ri2i_multi", "ri2i_multi8", "klein_sheet"],
+                    ["t2v", "i2v", "fl2v", "l2v", "rv2v", "ri2v", "ri2i", "ri2i_multi", "klein_sheet"],
                     {"default": "t2v",
                      "tooltip": "t2v=text-to-video (no images), i2v=first-frame, "
                                 "fl2v=first+last frame, l2v=last-frame only, "
-                                "r2v=full-reference (6-field output), "
+                                
                                 "rv2v=static ref-video = scene, reference images = "
                                 "replacement characters (Bernini RV2V semantics), "
                                 "ri2v=reference images to video (scene/identity), "
@@ -1905,7 +1752,9 @@ class H3PromptEnhancer:
                                 "reference sheet image, "
                                 "ri2i_multi=one call returns six static cell prompts "
                                 "(front/face/left/right/back/seductive) as JSON — use "
-                                "the Plus node for the six parsed cell outputs."}
+                                "the Plus node for the six parsed cell outputs, "
+                                "klein_sheet=Flux-2 Klein character sheet: seven "
+                                "self-contained t2i/t2i-edit panel prompts."}
                 ),
                 "duration": ("FLOAT", {
                     "default": 5.0, "min": 0.5, "max": 120.0, "step": 0.5,
@@ -1918,17 +1767,15 @@ class H3PromptEnhancer:
                     {"default": "x-ai/grok-4.3"}
                 ),
                 "local_backend": (
-                    ["off", "ollama/joycaption",
-                     "llamacpp/qwen3.8-heretic-ara", "llamacpp/muse-glimmer",
-                     "llamacpp/qwen3.8-aggressive"],
+                    ["off"] + sorted(LOCAL_MODEL_DEFAULTS),
                     {"default": "off",
                      "tooltip": "Use a LOCAL model instead of OpenRouter. "
-                                "ollama/joycaption = JoyCaption Beta One via "
-                                "Ollama (7.5GB). llamacpp/* = on-demand llama-server "
-                                "spawn, VRAM freed after each run: "
-                                "qwen3.8-heretic-ara (16.8GB), muse-glimmer "
-                                "(16.2GB) or qwen3.8-aggressive "
-                                "(HauhauCS uncensored, 17.9GB)."}
+                                "off = remote (OpenRouter). ollama/* = an "
+                                "Ollama server (e.g. ollama/joycaption). "
+                                "llamacpp = a llama.cpp server — set "
+                                "llamacpp_url for an external server, or "
+                                "define named on-demand models in your "
+                                "llamacpp config file (see README)."}
                 ),
             },
             "optional": {
@@ -2078,6 +1925,14 @@ class H3PromptEnhancer:
                                "Analysis text block is kept in the template "
                                "either way."
                 }),
+                "llamacpp_url": ("STRING", {
+                    "default": "",
+                    "tooltip": "For the llamacpp backend: point at an external "
+                               "llama.cpp-compatible server, e.g. "
+                               "http://127.0.0.1:8080. Leave empty to use the "
+                               "entry's configured URL (named on-demand models "
+                               "spawn the server themselves)."
+                }),
             }
         }
 
@@ -2176,6 +2031,7 @@ class H3PromptEnhancer:
         return self._format_analysis(result)
 
     def enhance(self, prompt, task_type, duration, model, local_backend="off",
+                 llamacpp_url="",
                 source_image=None, last_frame_image=None,
                 reference_image_0=None, reference_image_1=None,
                 reference_image_2=None, images_batch=None, source_video=None,
@@ -2223,22 +2079,30 @@ class H3PromptEnhancer:
         if use_local:
             defaults = LOCAL_MODEL_DEFAULTS.get(local_backend, {})
             backend = defaults.get("backend", "ollama")
-            backend_url = (defaults.get("llama_url")
-                           or defaults.get("ollama_url")
-                           or OLLAMA_DEFAULT_URL)
+            backend_url = (llamacpp_url.strip()
+                           if backend == "llamacpp" and llamacpp_url.strip()
+                           else (defaults.get("llama_url")
+                                 or defaults.get("ollama_url")
+                                 or OLLAMA_DEFAULT_URL))
             backend_model = (defaults.get("llama_model")
-                             or defaults.get("ollama_model", ""))
+                             or defaults.get("ollama_model")
+                             or llm_model)
             if not backend_model:
                 raise ValueError(
                     f"No model for local_backend='{local_backend}'.")
             if backend == "llamacpp":
-                ownership, server_pid = _spawn_llama_server(
-                    defaults, context_length=context_length)
-                server_owned = (ownership, server_pid)
+                if defaults.get("llama_bin") and not llamacpp_url.strip():
+                    # named on-demand entry (user config file): spawn/reuse
+                    ownership, server_pid = _spawn_llama_server(
+                        defaults, context_length=context_length)
+                    server_owned = (ownership, server_pid)
+                else:
+                    # external server: connect only, never spawn or kill
+                    server_owned = None
                 logging.info(
                     f"[H3PromptEnhancer] llama.cpp backend: {local_backend} "
                     f"model={backend_model} url={backend_url} "
-                    f"ctx={context_length} ({ownership})")
+                    f"ctx={context_length}")
             else:
                 logging.info(
                     f"[H3PromptEnhancer] Ollama backend: {local_backend} "
@@ -2301,9 +2165,6 @@ class H3PromptEnhancer:
         elif task_type == "ri2i_multi":
             system_prompt = (H3_RI2I_MULTI_SYSTEM_PROMPT_ADV if use_adv
                              else H3_RI2I_MULTI_SYSTEM_PROMPT)
-        elif task_type == "ri2i_multi8":
-            system_prompt = (H3_RI2I_MULTI8_SYSTEM_PROMPT_ADV if use_adv
-                             else H3_RI2I_MULTI8_SYSTEM_PROMPT)
         elif task_type == "klein_sheet":
             system_prompt = H3_KLEIN_SHEET_SYSTEM_PROMPT
         elif task_type in H3_RI2I_TASK_TYPES:
@@ -2481,7 +2342,7 @@ class H3PromptEnhancer:
         # <Subject N> replacement characters whose appearance must drive the
         # integrated_multimodal_description (note: the i2v gen node has no ref_image
         # conditioning — only the prompt text reaches the model).
-        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi", "ri2i_multi8", "klein_sheet"):
+        if task_type in ("r2v", "rv2v", "i2v", "ri2v", "ri2i", "ri2i_multi", "klein_sheet"):
             ref_images = []
             # Scene-as-image: source_image becomes the scene (<Picture 1>),
             # prepended before character ref images so numbering aligns with
@@ -2677,7 +2538,7 @@ class H3PromptEnhancer:
                             f"retention_analysis mark <Subject {subj_n}> AND <Picture {i + 1}> "
                             "as attribute_transfer (strong identity source; never "
                             "weak_reference).\n")
-                elif task_type in ("ri2i", "ri2i_multi", "ri2i_multi8"):
+                elif task_type in ("ri2i", "ri2i_multi"):
                     ri2i_scene_as_image = (source_video is None
                                            and source_image is not None)
                     if ri2i_scene_as_image and i == 0:
@@ -2922,12 +2783,6 @@ class H3PromptEnhancer:
                     "only inside <Picture 1>'s definition.")
         elif task_type == "ri2i_multi":
             user_text = H3_RI2I_MULTI_TEMPLATE.format(
-                duration_seconds=f"{duration:.1f}",
-                ref_section=ref_section,
-                user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",
-            )
-        elif task_type == "ri2i_multi8":
-            user_text = H3_RI2I_MULTI8_TEMPLATE.format(
                 duration_seconds=f"{duration:.1f}",
                 ref_section=ref_section,
                 user_prompt=prompt if prompt.strip() else "(no user notes — infer everything from the images)",

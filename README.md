@@ -41,13 +41,15 @@ The output schema switches on the **task_type** widget:
 | `i2v` | image-to-video (first-frame anchor) | 3 fields |
 | `fl2v` | first + last frame anchors | 3 fields |
 | `l2v` | last-frame only (converge to image) | 3 fields |
-| `r2v` | full-reference mode (subject/picture/video/audio labels) | 6 fields |
-| `rv2v` | static ref-video = scene, images = replacement characters (legacy two-subject) | 6 fields |
+| `rv2v` | static ref-video = scene, images = replacement characters | 6 fields |
 | `ri2v` | **reference images replace a character in a source video, scene/structure preserved** | 6 fields |
 | `ri2i` | **reference images → character sheet: 6-shot turnaround of ONE character** | 6 fields |
 | `ri2i_multi` | **one call → six static cell prompts (front/face/left/right/back/seductive) as JSON** | JSON cells |
+| `klein_sheet` | **Flux-2 Klein character sheet: seven self-contained t2i/t2i-edit panel prompts** | JSON cells |
 
-**`ri2v` is the recommended character-swap mode.** It reuses the proven `r2v`
+**`ri2v` is the recommended character-swap mode.** (The legacy `r2v` task
+is folded into `ri2v` — it routes through the same 6-field template — and is
+not offered as a separate dropdown option.) It reuses the proven `r2v`
 6-field template and applies the empirically-correct retention recipe (matching
 the community `minimaxH3Character_v10` workflow): the REPLACEMENT character is
 `attribute_transfer` — face, body, hair, skin tone, clothing and makeup
@@ -114,7 +116,7 @@ six stills into the final labeled sheet.
 3. `non_diegetic_music` — background music: genre, tempo, instrumentation,
    mood, where it starts/ends.
 
-**6-field (R2V reference)** format:
+**6-field (reference)** format:
 
 1. `subject_definitions` — one line per label: `<Subject N>` (reusable visible
    content), `<Picture N>` (frame anchor / storyboard), `<Video N>` (whole-video
@@ -158,7 +160,8 @@ simple image).
   `<Subject N>` definitions).
 - **Task framing**: the H3 task label plus task-specific rules injected per
   type — e.g. i2v *must* open with the "at 0.00 seconds, &lt;Picture 1&gt; is
-  fully referenced" line; r2v sets the 350-500 word detailed_description rule.
+  fully referenced" line; the reference modes set the 350-500 word
+  detailed_description rule.
 - **Directives**: optional `same_subject` (all references are one person →
   merge identity across images) and `style_transfer` (render the reference
   subject in `anime` / `3d_render` / `cartoon` / `match_source` style while
@@ -172,13 +175,35 @@ output, for inspection/debugging.
 
 ### Model / backend
 
-- **OpenRouter (default)** — `model` dropdown (Grok, DeepSeek, Gemini, GPT-4o)
-  or a free-form `custom_model` ID. API key from the `api_key` input or the
-  `OPENROUTER_API_KEY` environment variable. **Never stored in the repo.**
-- **Local Ollama (JoyCaption Beta One, 7.5GB)** — `local_backend =
-  "ollama/joycaption"`. Requires Ollama running (`systemctl start ollama`).
-  The node auto-appends NSFW permission + JoyCaption prose-style prompts for
-  local models, and unloads the model from VRAM after the call.
+Three ways to run the enhancer — local options need no account or API key:
+
+- **Remote (OpenRouter)** — `local_backend = "off"` (default): the `model`
+  dropdown (Grok, DeepSeek, Gemini, GPT-4o) or a free-form `custom_model` ID.
+  API key from the `api_key` input or the `OPENROUTER_API_KEY` environment
+  variable — **never stored in the repo**.
+- **Ollama** — `local_backend = "ollama/joycaption"` (or any Ollama model you
+  define in the config file). Requires an Ollama server running; the node
+  unloads the model from VRAM after each call.
+- **llama.cpp (local, no API)** — `local_backend = "llamacpp"` connects to
+  **any** llama.cpp-compatible server (`llama-server`, LM Studio, …). You run
+  the server yourself:
+  1. Start it, e.g. `llama-server -m model.gguf --port 8080` (add `--mmproj`
+     for vision-capable models).
+  2. On the node set `llamacpp_url` to its endpoint (e.g.
+     `http://127.0.0.1:8080`) and pick the model name via `model` /
+     `custom_model`.
+  Nothing is spawned or killed — the node only talks to your server.
+- **Named on-demand models (optional, power users)** — want the node to start
+  *and stop* its own `llama-server` per run (e.g. when ComfyUI and the LLM
+  share one GPU)? Define named entries in a JSON config file at
+  `$H3O_LLAMACPP_CONFIG` or `~/.config/h3o/llamacpp.json`. Each entry carries
+  its own server binary, model files, port, context size, and launch flags —
+  schema in [`llamacpp.example.json`](llamacpp.example.json). Named entries
+  appear in the `local_backend` dropdown automatically.
+
+**No hardcoded setup.** The repo ships with no machine-specific paths, ports,
+or model names — every local entry comes from your own config file, and the
+generic `llamacpp` entry works against any server you already run.
 
 ### Other controls
 

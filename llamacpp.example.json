@@ -1,0 +1,19 @@
+{
+  "llamacpp/my-model": {
+    "label": "My Model (llama.cpp)",
+    "backend": "llamacpp",
+    "llama_url": "http://127.0.0.1:8080",
+    "llama_model": "my-model.gguf",
+    "llama_bin": "/usr/local/bin/llama-server",
+    "llama_model_path": "/models/my-model.gguf",
+    "llama_fallback_model": "/models/my-model-qs.gguf",
+    "llama_mmproj_path": "/models/mmproj.gguf",
+    "llama_ctx": 32768,
+    "llama_ctx_max": 32768,
+    "llama_log": "/tmp/h3o-llamacpp.log",
+    "llama_flags": [
+      "--flash-attn", "on", "-ngl", "99", "--parallel", "1",
+      "--no-warmup", "--jinja", "--temp", "0.7", "-n", "32768"
+    ]
+  }
+}
