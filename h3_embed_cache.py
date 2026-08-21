@@ -199,7 +199,10 @@ def _model_fingerprint(clip):
         if i < _SAMPLE_PARAMS:
             h.update(str(param.dtype).encode())
             flat = param.detach().reshape(-1)
-            h.update(flat[:_SAMPLE_BYTES].cpu().contiguous().numpy().tobytes())
+            # .numpy() rejects bf16 ("Got unsupported ScalarType BFloat16") —
+            # cast to fp32 first (exact, deterministic) so mixed-dtype text
+            # encoder loads (fp16 + bf16 params) fingerprint cleanly.
+            h.update(flat[:_SAMPLE_BYTES].cpu().float().contiguous().numpy().tobytes())
     h.update(("params:%d" % total).encode())
     return h.hexdigest()
 

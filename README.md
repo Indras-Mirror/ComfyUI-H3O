@@ -397,6 +397,9 @@ Load VAE, which expects the 12-channel head).
 
 ## Installation
 
+Requires **ComfyUI 0.30+** (the pack uses the new schema-based node API) and a
+GPU with enough VRAM for MiniMax H3 (~13-20GB).
+
 ```bash
 cd ComfyUI/custom_nodes
 git clone https://github.com/Indras-Mirror/ComfyUI-H3O.git
@@ -404,10 +407,18 @@ git clone https://github.com/Indras-Mirror/ComfyUI-H3O.git
 
 Restart ComfyUI.
 
+This pack provides **companion nodes only** — you also need the MiniMax H3
+model files (the diffusion model, the Qwen3-VL text encoder, and the video +
+audio VAEs). Grab them via the official ComfyUI H3 day-0 guide or your model
+manager, and drop them under `models/diffusion_models` / `models/text_encoders`
+/ `models/vae` as usual.
+
 ## API Keys
 
-**No API keys are stored in this repository.** Keys are passed per-node via the
-`api_key` input, or read from the `OPENROUTER_API_KEY` environment variable.
+**No API keys are stored in this repository.** Keys are only needed for the
+remote (OpenRouter) path: pass one per-node via the `api_key` input, or set
+the `OPENROUTER_API_KEY` environment variable. The local backends (Ollama /
+llama.cpp) run fully offline with no key.
 
 ## License
 
