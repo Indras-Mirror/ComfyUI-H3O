@@ -184,22 +184,25 @@ Three ways to run the enhancer — local options need no account or API key:
 - **Ollama** — `local_backend = "ollama/joycaption"` (or any Ollama model you
   define in the config file). Requires an Ollama server running; the node
   unloads the model from VRAM after each call.
-- **llama.cpp (local, no API)** — `local_backend = "llamacpp"` connects to
-  **any** llama.cpp-compatible server (`llama-server`, LM Studio, …). You run
-  the server yourself:
-  1. Start it, e.g. `llama-server -m model.gguf --port 8080` (add `--mmproj`
-     for vision-capable models).
-  2. On the node set `llamacpp_url` to its endpoint (e.g.
-     `http://127.0.0.1:8080`) and pick the model name via `model` /
-     `custom_model`.
-  Nothing is spawned or killed — the node only talks to your server.
-- **Named on-demand models (optional, power users)** — want the node to start
-  *and stop* its own `llama-server` per run (e.g. when ComfyUI and the LLM
-  share one GPU)? Define named entries in a JSON config file at
-  `$H3O_LLAMACPP_CONFIG` or `~/.config/h3o/llamacpp.json`. Each entry carries
-  its own server binary, model files, port, context size, and launch flags —
-  schema in [`llamacpp.example.json`](llamacpp.example.json). Named entries
-  appear in the `local_backend` dropdown automatically.
+- **llama.cpp (local, no API)** — `local_backend = "llamacpp"` works with
+  any llama.cpp-compatible server (`llama-server`, LM Studio, …), three ways:
+  1. **Connect to your own server** — run it yourself
+     (`llama-server -m model.gguf --port 8080`; add `--mmproj` for vision
+     models), set the node's `llamacpp_url` to its endpoint, and pick the
+     model name via `model` / `custom_model`. Nothing is spawned or killed.
+  2. **Spawn on demand (recommended when ComfyUI and the LLM share one
+     GPU)** — set `llamacpp_bin` (default `llama-server`; a name on PATH or a
+     full path) and `llamacpp_model` (path to your GGUF), plus optional
+     `llamacpp_mmproj` for vision. The node starts its own server before each
+     call (first unloading ComfyUI's VRAM), and kills it afterwards — so no
+     LLM sits in VRAM during video generation. It never kills a server it did
+     not start: if a healthy server already answers on the port, it is reused
+     and left running.
+  3. **Named on-demand models (power users)** — full control via a JSON
+     config file at `$H3O_LLAMACPP_CONFIG` or `~/.config/h3o/llamacpp.json`
+     (server binary, model files, port, context size, launch flags — schema
+     in [`llamacpp.example.json`](llamacpp.example.json)). Entries appear in
+     the `local_backend` dropdown automatically.
 
 **No hardcoded setup.** The repo ships with no machine-specific paths, ports,
 or model names — every local entry comes from your own config file, and the

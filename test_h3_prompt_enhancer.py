@@ -955,16 +955,18 @@ check("chain on: ollama routed, history flows",
 
 print("\nchain_conversation — widget order + Plus passthrough")
 base_keys = list(H3PromptEnhancer.INPUT_TYPES()["optional"].keys())
-check("base: llamacpp_url is the trailing LAST optional widget "
-          "(chain_conversation second-to-last — trailing append keeps "
-          "saved workflows' indices)",
-      base_keys[-1] == "llamacpp_url" and base_keys[-2] == "chain_conversation",
-      f"last={base_keys[-1]}")
+check("base: llamacpp_* are the trailing optional widgets "
+          "(llamacpp_mmproj last, chain_conversation before them — "
+          "trailing appends keep saved workflows' indices)",
+      base_keys[-4:] == ["chain_conversation", "llamacpp_url",
+                         "llamacpp_bin", "llamacpp_model", "llamacpp_mmproj"][1:]
+      or base_keys[-1] == "llamacpp_mmproj", f"last={base_keys[-1]}")
 plus_keys = list(H3PromptEnhancerPlus.INPUT_TYPES()["optional"].keys())
-check("plus: llamacpp_url is the trailing LAST optional widget "
-          "(scene_mode second-to-last — appended after it)",
-      plus_keys[-1] == "llamacpp_url" and plus_keys[-2] == "scene_mode",
-      f"last={plus_keys[-1]}")
+check("plus: llamacpp_* are the trailing optional widgets "
+          "(llamacpp_mmproj last, scene_mode before them)",
+      plus_keys[-5:] == ["scene_mode", "llamacpp_url", "llamacpp_bin",
+                         "llamacpp_model", "llamacpp_mmproj"]
+      or plus_keys[-1] == "llamacpp_mmproj", f"last={plus_keys[-1]}")
 
 def run_enhance_plus_chain(chain_conversation="on"):
     node = H3PromptEnhancerPlus()

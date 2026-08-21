@@ -115,10 +115,11 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
                        "describe the explicit sexual act from the source "
                        "video in the final prompt."
         })
-        # llamacpp_url appended LAST (after scene_mode) so saved workflows'
-        # widgets_values keep their existing indices (trailing new widget).
-        lc = base["optional"].pop("llamacpp_url")
-        base["optional"]["llamacpp_url"] = lc
+        # llamacpp_* appended LAST (after scene_mode) so saved workflows'
+        # widgets_values keep their existing indices (trailing new widgets).
+        for _k in ("llamacpp_url", "llamacpp_bin", "llamacpp_model",
+                   "llamacpp_mmproj"):
+            base["optional"][_k] = base["optional"].pop(_k)
         return base
 
     RETURN_TYPES = ("STRING", "STRING", "IMAGE",
@@ -158,7 +159,8 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
                      editing_frame="on", seed=-1, seed_control="randomize",
                      context_length=-1,
                      chain_conversation="off", scene_mode="hard",
-                     enhanced_rules=True, llamacpp_url=""):
+                     enhanced_rules=True, llamacpp_url="",
+                     llamacpp_bin="", llamacpp_model="", llamacpp_mmproj=""):
         # INPUT_IS_LIST unwrap — every input arrives wrapped in a list.
         prompt = self._un1(prompt)
         task_type = self._un1(task_type)
@@ -189,6 +191,9 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
         scene_mode = self._un1(scene_mode)
         enhanced_rules = self._un1(enhanced_rules)
         llamacpp_url = self._un1(llamacpp_url)
+        llamacpp_bin = self._un1(llamacpp_bin)
+        llamacpp_model = self._un1(llamacpp_model)
+        llamacpp_mmproj = self._un1(llamacpp_mmproj)
 
         # seed_control: randomize -> fresh seed every run (backend seed=-1);
         # fixed -> honor the seed value above for reproducible output.
@@ -290,6 +295,9 @@ class H3PromptEnhancerPlus(H3PromptEnhancer):
             chain_conversation=chain_conversation,
             scene_mode=scene_mode,
             llamacpp_url=llamacpp_url,
+            llamacpp_bin=llamacpp_bin,
+            llamacpp_model=llamacpp_model,
+            llamacpp_mmproj=llamacpp_mmproj,
         )
 
         # ref_images_out — a LIST of individual [1,H,W,C] images in <Picture N>

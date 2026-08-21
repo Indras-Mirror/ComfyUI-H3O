@@ -1930,8 +1930,29 @@ class H3PromptEnhancer:
                     "tooltip": "For the llamacpp backend: point at an external "
                                "llama.cpp-compatible server, e.g. "
                                "http://127.0.0.1:8080. Leave empty to use the "
-                               "entry's configured URL (named on-demand models "
-                               "spawn the server themselves)."
+                               "entry's configured URL or spawn on demand "
+                               "(llamacpp_bin + llamacpp_model)."
+                }),
+                "llamacpp_bin": ("STRING", {
+                    "default": "llama-server",
+                    "tooltip": "Path to a llama-server binary (or its name on "
+                               "PATH) for ON-DEMAND spawning. Combined with "
+                               "llamacpp_model the node starts its own server "
+                               "before the call and kills it afterwards, "
+                               "freeing VRAM for ComfyUI — never kills a "
+                               "server it did not start. Leave empty to "
+                               "connect to an already-running server instead."
+                }),
+                "llamacpp_model": ("STRING", {
+                    "default": "",
+                    "tooltip": "Path to the GGUF model file for on-demand "
+                               "spawning (with llamacpp_bin). Optional "
+                               "llamacpp_mmproj adds a vision projector."
+                }),
+                "llamacpp_mmproj": ("STRING", {
+                    "default": "",
+                    "tooltip": "Path to an mmproj GGUF for vision support on "
+                               "the on-demand server (see llamacpp_bin)."
                 }),
             }
         }
@@ -2031,7 +2052,8 @@ class H3PromptEnhancer:
         return self._format_analysis(result)
 
     def enhance(self, prompt, task_type, duration, model, local_backend="off",
-                 llamacpp_url="",
+                 llamacpp_url="", llamacpp_bin="", llamacpp_model="",
+                 llamacpp_mmproj="",
                 source_image=None, last_frame_image=None,
                 reference_image_0=None, reference_image_1=None,
                 reference_image_2=None, images_batch=None, source_video=None,
@@ -2079,25 +2101,45 @@ class H3PromptEnhancer:
         if use_local:
             defaults = LOCAL_MODEL_DEFAULTS.get(local_backend, {})
             backend = defaults.get("backend", "ollama")
-            backend_url = (llamacpp_url.strip()
-                           if backend == "llamacpp" and llamacpp_url.strip()
-                           else (defaults.get("llama_url")
-                                 or defaults.get("ollama_url")
-                                 or OLLAMA_DEFAULT_URL))
-            backend_model = (defaults.get("llama_model")
+            # llamacpp: node inputs override the config entry; either can
+            # drive an on-demand spawn. llamacpp_url forces external mode.
+            eff = dict(defaults)
+            if llamacpp_bin.strip():
+                eff["llama_bin"] = llamacpp_bin.strip()
+            if llamacpp_model.strip():
+                eff["llama_model_path"] = llamacpp_model.strip()
+                eff["llama_model"] = os.path.basename(llamacpp_model.strip())
+            if llamacpp_mmproj.strip():
+                eff["llama_mmproj_path"] = llamacpp_mmproj.strip()
+            if backend == "llamacpp":
+                backend_url = (llamacpp_url.strip()
+                               or eff.get("llama_url")
+                               or "http://127.0.0.1:8080")
+            else:
+                backend_url = (defaults.get("ollama_url")
+                               or OLLAMA_DEFAULT_URL)
+            backend_model = (eff.get("llama_model")
                              or defaults.get("ollama_model")
                              or llm_model)
             if not backend_model:
                 raise ValueError(
                     f"No model for local_backend='{local_backend}'.")
             if backend == "llamacpp":
-                if defaults.get("llama_bin") and not llamacpp_url.strip():
-                    # named on-demand entry (user config file): spawn/reuse
+                spawnable = bool(eff.get("llama_bin")
+                                 and eff.get("llama_model_path"))
+                if spawnable and not llamacpp_url.strip():
+                    # on-demand (config entry or bin/model inputs): spawn or
+                    # reuse a healthy server; teardown kills only what we
+                    # spawned, freeing VRAM for ComfyUI afterwards.
+                    eff.setdefault("llama_url", backend_url)
+                    if not eff.get("llama_flags"):
+                        eff["llama_flags"] = ["--jinja", "-ngl", "99"]
                     ownership, server_pid = _spawn_llama_server(
-                        defaults, context_length=context_length)
+                        eff, context_length=context_length)
                     server_owned = (ownership, server_pid)
                 else:
-                    # external server: connect only, never spawn or kill
+                    # external server (llamacpp_url set, or no bin/model):
+                    # connect only — never spawn or kill.
                     server_owned = None
                 logging.info(
                     f"[H3PromptEnhancer] llama.cpp backend: {local_backend} "
