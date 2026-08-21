@@ -6,3 +6,4 @@ __pycache__/
 h3_region_mask.py
 HANDOFF*.md
 test_h3_batch_padding.py.bak
+experiments/RESUME_PROMPT*.md
